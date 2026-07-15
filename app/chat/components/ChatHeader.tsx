@@ -1,0 +1,83 @@
+'use client'
+
+import { useState } from 'react'
+import useChatStore from '@/app/chat/chatStore'
+import { useOnlineCount } from '@/app/chat/hooks/useOnlineCount'
+import { ChatHeaderDesktop } from './header/ChatHeaderDesktop'
+import { ChatHeaderMobile } from './header/ChatHeaderMobile'
+import { NotificationSettingsDialog } from './header/NotificationSettingsDialog'
+import type { ChatRoom } from '../types'
+
+// 聊天头部组件属性接口
+interface ChatHeaderProps {
+  room: ChatRoom
+  onBack?: () => void
+  showBackButton?: boolean
+  searchQuery?: string
+  onSearchChange?: (query: string) => void
+  onOpenRoomList?: () => void
+  onOpenUsersList?: () => void
+}
+
+export function ChatHeader({
+  room,
+  onBack,
+  showBackButton = false,
+  onOpenRoomList,
+  onOpenUsersList,
+}: ChatHeaderProps) {
+  // 从聊天状态管理获取数据
+  const {
+    onlineUsers,
+    connectionStatus,
+    isConnected,
+    notificationSettings,
+    browserNotificationPermission,
+    updateNotificationSettings,
+    requestBrowserNotificationPermission,
+  } = useChatStore()
+
+  // 使用自定义 hooks
+  const { onlineCount } = useOnlineCount(room, onlineUsers, isConnected)
+
+  // 对话框状态管理
+  const [isNotificationSettingsOpen, setIsNotificationSettingsOpen] = useState(false)
+
+  return (
+    <>
+      {/* 桌面端头部 */}
+      <ChatHeaderDesktop
+        room={room}
+        showBackButton={showBackButton}
+        isConnected={isConnected}
+        connectionStatus={connectionStatus}
+        onlineCount={onlineCount}
+        onBack={onBack}
+        onOpenNotificationSettings={() => setIsNotificationSettingsOpen(true)}
+      />
+
+      {/* 移动端头部 */}
+      <ChatHeaderMobile
+        room={room}
+        showBackButton={showBackButton}
+        isConnected={isConnected}
+        connectionStatus={connectionStatus}
+        onlineCount={onlineCount}
+        onBack={onBack}
+        onOpenRoomList={onOpenRoomList}
+        onOpenUsersList={onOpenUsersList}
+        onOpenNotificationSettings={() => setIsNotificationSettingsOpen(true)}
+      />
+
+      {/* 通知设置对话框 */}
+      <NotificationSettingsDialog
+        open={isNotificationSettingsOpen}
+        onOpenChange={setIsNotificationSettingsOpen}
+        notificationSettings={notificationSettings}
+        browserNotificationPermission={browserNotificationPermission}
+        onUpdateNotificationSettings={updateNotificationSettings}
+        onRequestBrowserNotificationPermission={requestBrowserNotificationPermission}
+      />
+    </>
+  )
+}

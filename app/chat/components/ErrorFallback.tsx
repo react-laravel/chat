@@ -1,0 +1,308 @@
+'use client'
+
+import { AlertCircle, RefreshCw, Wifi, WifiOff, Shield, Server } from 'lucide-react'
+import { Button } from '@/components/ui/button'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Badge } from '@/components/ui/badge'
+import { type ChatApiError } from '@/lib/api/chat-error-handler'
+
+/**
+ * 错误回退组件属性接口
+ */
+interface ErrorFallbackProps {
+  error: ChatApiError | Error | null
+  onRetry?: () => void
+  onClearError?: () => void
+  className?: string
+  variant?: 'full' | 'inline' | 'minimal'
+}
+
+/**
+ * 错误类型到相关属性的map映射表
+ */
+const ERROR_CONFIG = {
+  network: {
+    icon: <WifiOff className="h-8 w-8 text-red-500" />,
+    colorClass: 'border-red-200 bg-red-50',
+    title: '连接问题',
+    description: '无法连接到聊天服务器。请检查您的网络连接。',
+  },
+  timeout: {
+    icon: <RefreshCw className="h-8 w-8 text-yellow-500" />,
+    colorClass: 'border-yellow-200 bg-yellow-50',
+    title: '请求超时',
+    description: '请求超时，请稍后重试。',
+  },
+  authentication: {
+    icon: <Shield className="h-8 w-8 text-orange-500" />,
+    colorClass: 'border-orange-200 bg-orange-50',
+    title: '需要身份验证',
+    description: '您需要登录才能访问聊天功能。请重新登录。',
+  },
+  server: {
+    icon: <Server className="h-8 w-8 text-red-500" />,
+    colorClass: 'border-red-200 bg-red-50',
+    title: '服务器错误',
+    description: '服务器暂时出现问题，请稍后重试。',
+  },
+  validation: {
+    icon: <AlertCircle className="h-8 w-8 text-blue-500" />,
+    colorClass: 'border-blue-200 bg-blue-50',
+    title: '无效请求',
+    description: '请求格式有误，请检查输入内容后重试。',
+  },
+  unknown: {
+    icon: <AlertCircle className="text-muted-foreground h-8 w-8" />,
+    colorClass: 'border-border bg-muted',
+    title: '出现错误',
+    description: '发生未知错误，请重试。',
+  },
+} as const
+
+// 工具函数：获取错误相关属性
+type ErrorConfig = typeof ERROR_CONFIG
+type ErrorConfigKey = keyof ErrorConfig
+
+function getErrorProp<T extends keyof ErrorConfig['unknown']>(
+  errorType: ChatApiError['type'] | undefined,
+  key: T
+): ErrorConfig[ErrorConfigKey][T] {
+  const hasType = !!errorType && errorType in ERROR_CONFIG
+  const errorKey = (hasType ? errorType : 'unknown') as ErrorConfigKey
+  return ERROR_CONFIG[errorKey][key]
+}
+
+/**
+ * 根据错误类型和可重试状态生成对应的操作按钮
+ */
+const getActionButtons = (
+  errorType: ChatApiError['type'] | undefined,
+  retryable: boolean,
+  onRetry?: () => void,
+  onClearError?: () => void
+) => {
+  const buttons = []
+
+  // 重试按钮
+  if (retryable && onRetry) {
+    buttons.push(
+      <Button key="retry" onClick={onRetry} className="flex items-center gap-2">
+        <RefreshCw className="h-4 w-4" />
+        重试
+      </Button>
+    )
+  }
+
+  // 登录按钮（认证错误时显示）
+  if (errorType === 'authentication') {
+    buttons.push(
+      <Button
+        key="login"
+        onClick={() => (window.location.href = '/login')}
+        className="flex items-center gap-2"
+      >
+        <Shield className="h-4 w-4" />
+        登录
+      </Button>
+    )
+  }
+
+  // 刷新页面按钮（网络错误时显示）
+  if (errorType === 'network') {
+    buttons.push(
+      <Button
+        key="refresh"
+        variant="outline"
+        onClick={() => window.location.reload()}
+        className="flex items-center gap-2"
+      >
+        <Wifi className="h-4 w-4" />
+        刷新页面
+      </Button>
+    )
+  }
+
+  // 关闭错误按钮
+  if (onClearError) {
+    buttons.push(
+      <Button
+        key="dismiss"
+        variant="ghost"
+        onClick={onClearError}
+        className="flex items-center gap-2"
+      >
+        关闭
+      </Button>
+    )
+  }
+
+  return buttons
+}
+
+/**
+ * 错误回退组件 - 用于显示各种类型的错误信息
+ */
+export default function ErrorFallback({
+  error,
+  onRetry,
+  onClearError,
+  className = '',
+  variant = 'full',
+}: ErrorFallbackProps) {
+  if (!error) return null
+
+  // 解析错误信息
+  const chatError = error as ChatApiError
+  const errorType = chatError.type || 'unknown'
+  const errorMessage = chatError.message || (error as Error).message || '发生未知错误'
+  const retryable = chatError.retryable !== false
+  const timestamp = chatError.timestamp || new Date()
+
+  // 各种错误映射属性
+  const icon = getErrorProp(errorType, 'icon')
+  const colorClass = getErrorProp(errorType, 'colorClass')
+  const title = getErrorProp(errorType, 'title')
+  const description = getErrorProp(errorType, 'description')
+  const actionButtons = getActionButtons(errorType, retryable, onRetry, onClearError)
+
+  // 最小化变体 - 仅显示简单的错误消息
+  if (variant === 'minimal') {
+    return (
+      <div className={`flex items-center gap-2 text-sm text-red-600 ${className}`}>
+        <AlertCircle className="h-4 w-4" />
+        <span>{errorMessage}</span>
+        {retryable && onRetry && (
+          <Button size="sm" variant="ghost" onClick={onRetry} className="h-6 px-2">
+            重试
+          </Button>
+        )}
+      </div>
+    )
+  }
+
+  // 内联变体 - 紧凑的错误显示
+  if (variant === 'inline') {
+    return (
+      <div className={`rounded-lg border p-4 ${colorClass} ${className}`}>
+        <div className="flex items-start gap-3">
+          <div className="flex-shrink-0">{icon}</div>
+          <div className="min-w-0 flex-1">
+            <h4 className="text-foreground font-medium">{title}</h4>
+            <p className="text-muted-foreground mt-1 text-sm">{errorMessage}</p>
+            {actionButtons.length > 0 && <div className="mt-3 flex gap-2">{actionButtons}</div>}
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  // 完整变体 - 完整的错误页面
+  return (
+    <div className={`flex items-center justify-center p-8 ${className}`}>
+      <Card className={`w-full max-w-md ${colorClass}`}>
+        <CardHeader className="text-center">
+          <div className="mx-auto mb-4">{icon}</div>
+          <CardTitle className="text-xl">{title}</CardTitle>
+          <CardDescription className="text-base">{description}</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {/* 错误详情 */}
+          <div className="bg-background/50 rounded-lg p-3">
+            <p className="text-foreground text-sm font-medium">错误详情：</p>
+            <p className="text-muted-foreground mt-1 text-sm">{errorMessage}</p>
+            <div className="text-muted-foreground mt-2 flex items-center justify-between text-xs">
+              <span>类型：{errorType}</span>
+              <span>
+                {timestamp instanceof Date
+                  ? timestamp.toLocaleTimeString()
+                  : new Date(timestamp).toLocaleTimeString()}
+              </span>
+            </div>
+            {chatError.code && (
+              <div className="mt-2">
+                <Badge variant="outline" className="text-xs">
+                  错误代码：{chatError.code}
+                </Badge>
+              </div>
+            )}
+          </div>
+
+          {/* 操作按钮 */}
+          {actionButtons.length > 0 && <div className="flex flex-col gap-2">{actionButtons}</div>}
+
+          {/* 额外帮助信息 */}
+          <div className="text-center">
+            <p className="text-muted-foreground text-xs">如果问题持续存在，请联系技术支持。</p>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  )
+}
+
+export { ErrorFallback }
+
+/**
+ * 专门用于常见场景的错误回退组件
+ */
+
+/**
+ * 网络错误回退组件
+ */
+export function NetworkErrorFallback({
+  onRetry,
+  className,
+}: {
+  onRetry?: () => void
+  className?: string
+}) {
+  // 复用 ChatApiError、属性全在定义
+  const error: ChatApiError = {
+    name: 'ChatApiError',
+    type: 'network',
+    message: '无法连接到聊天服务器',
+    timestamp: new Date(),
+    retryable: true,
+    userFriendly: true,
+  }
+
+  return <ErrorFallback error={error} onRetry={onRetry} variant="inline" className={className} />
+}
+
+/**
+ * 认证错误回退组件
+ */
+export function AuthErrorFallback({ className }: { className?: string }) {
+  const error: ChatApiError = {
+    name: 'ChatApiError',
+    type: 'authentication',
+    message: '需要身份验证才能访问聊天功能',
+    timestamp: new Date(),
+    retryable: false,
+    userFriendly: true,
+  }
+
+  return <ErrorFallback error={error} variant="full" className={className} />
+}
+
+/**
+ * 服务器错误回退组件
+ */
+export function ServerErrorFallback({
+  onRetry,
+  className,
+}: {
+  onRetry?: () => void
+  className?: string
+}) {
+  const error: ChatApiError = {
+    name: 'ChatApiError',
+    type: 'server',
+    message: '聊天服务器暂时不可用',
+    timestamp: new Date(),
+    retryable: true,
+    userFriendly: true,
+  }
+
+  return <ErrorFallback error={error} onRetry={onRetry} variant="inline" className={className} />
+}
