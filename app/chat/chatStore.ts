@@ -39,6 +39,9 @@ export interface ChatState {
   messagesPagination: Record<string, MessagePagination>
 
   // UI 状态
+  livePresenceRooms: Record<string, boolean>
+  setLiveUsers: (roomId: number, users: OnlineUser[]) => void
+  deletedMessageIds: Record<string, number[]>
   messageLoadErrors: Record<string, { message: string; page: number } | undefined>
   loadingMessageRooms: Record<string, boolean>
   isLoading: boolean
@@ -69,6 +72,9 @@ export interface ChatState {
 
   // 消息操作
   addMessage: (roomId: number, message: ChatMessage) => void
+  applyReadState: (roomId: number, messageId: number, unreadCount: number) => void
+  updateMessage: (message: ChatMessage) => void
+  removeMessage: (roomId: number, messageId: number) => void
   loadMessages: (roomId: number, page?: number) => Promise<void>
   loadMoreMessages: (roomId: number) => Promise<void>
   clearMessages: (roomId: number) => void
@@ -124,6 +130,8 @@ const initialState = {
   messages: {},
   onlineUsers: {},
   messagesPagination: {},
+  livePresenceRooms: {},
+  deletedMessageIds: {},
   messageLoadErrors: {},
   loadingMessageRooms: {},
   isLoading: false,
@@ -149,26 +157,39 @@ const initialState = {
   browserNotificationPermission: 'default' as NotificationPermission,
 }
 
+let sessionGeneration = 0
+
 const reconcileCurrentRoom = (state: ChatState, rooms: ChatRoom[]): Partial<ChatState> => {
+  rooms = rooms.map(room =>
+    state.livePresenceRooms[String(room.id)]
+      ? { ...room, online_count: state.onlineUsers[String(room.id)]?.length ?? 0 }
+      : room
+  )
   const currentRoom = state.currentRoom
-  if (!currentRoom) {
-    return {
-      rooms,
-    }
+    ? (rooms.find(room => room.id === state.currentRoom?.id) ?? null)
+    : null
+  const cleaned =
+    state.currentRoom && !currentRoom ? cleanRoomData(state, state.currentRoom.id) : {}
+  const notifications = { ...state.notifications }
+  for (const room of rooms) {
+    if (typeof room.unread_count !== 'number') continue
+    if (room.unread_count <= 0) delete notifications[String(room.id)]
+    else
+      notifications[String(room.id)] = {
+        roomId: room.id,
+        unreadCount: room.unread_count,
+        lastMessageAt: notifications[String(room.id)]?.lastMessageAt ?? '',
+        hasMentions: notifications[String(room.id)]?.hasMentions ?? false,
+      }
   }
-
-  const nextCurrentRoom = rooms.find(room => room.id === currentRoom.id) ?? null
-  if (nextCurrentRoom) {
-    return {
-      rooms,
-      currentRoom: nextCurrentRoom,
-    }
-  }
-
+  for (const key of Object.keys(notifications))
+    if (!rooms.some(room => String(room.id) === key)) delete notifications[key]
   return {
-    ...cleanRoomData(state, currentRoom.id),
+    ...cleaned,
     rooms,
-    currentRoom: null,
+    currentRoom,
+    notifications,
+    totalUnreadCount: calculateTotalUnreadCount(notifications),
   }
 }
 
@@ -200,6 +221,8 @@ const useChatStore = create<ChatState>()(
 
         set(state => {
           const newState = { ...state, currentRoom: room }
+          // The previous room no longer has an active presence subscription.
+          if (state.currentRoom?.id !== room?.id) newState.livePresenceRooms = {}
 
           // 确保当前房间在房间列表中
           if (room) {
@@ -252,6 +275,7 @@ const useChatStore = create<ChatState>()(
 
       // 使用节流的房间加载函数
       loadRooms: createThrottledFunction(async () => {
+        const generation = sessionGeneration
         set({ isLoading: true, error: null })
 
         try {
@@ -261,6 +285,7 @@ const useChatStore = create<ChatState>()(
           const authState = useAuthStore.getState()
 
           const response = await apiGet<{ rooms: ChatRoom[] }>('/chat/rooms')
+          if (generation !== sessionGeneration) return
           const rooms = response.rooms ?? []
 
           const safeRooms = Array.isArray(rooms) ? rooms : []
@@ -270,6 +295,7 @@ const useChatStore = create<ChatState>()(
             isLoading: false,
           }))
         } catch (error) {
+          if (generation !== sessionGeneration) return
           const chatError = handleChatStoreError(error, '加载聊天室失败')
           setChatError(set, chatError, { isLoading: false })
         }
@@ -292,10 +318,23 @@ const useChatStore = create<ChatState>()(
       },
 
       joinRoom: async roomId => {
+        const generation = sessionGeneration
         set({ error: null })
         try {
-          await apiPost(`/chat/rooms/${roomId}/join`, {})
+          const response = await apiPost<{
+            room_user?: { is_muted?: boolean; muted_until?: string }
+          }>(`/chat/rooms/${roomId}/join`, {})
+          if (generation !== sessionGeneration) return
+          if (get().currentRoom?.id === roomId) {
+            const actor = useAuthStore.getState().user
+            const canModerate = actor?.is_admin || get().currentRoom?.created_by === actor?.id
+            get().updateMuteStatus(
+              !canModerate && Boolean(response?.room_user?.is_muted),
+              response?.room_user?.muted_until
+            )
+          }
         } catch (error) {
+          if (generation !== sessionGeneration) return
           const chatError = handleChatStoreError(error, '加入聊天室失败')
           setChatError(set, chatError)
           throw error
@@ -328,6 +367,7 @@ const useChatStore = create<ChatState>()(
       addMessage: (roomId, message) => {
         const state = get()
         const roomKey = roomId.toString()
+        if (state.deletedMessageIds[roomKey]?.includes(message.id)) return
         const currentMessages = state.messages[roomKey] ?? []
 
         // 避免重复消息
@@ -395,7 +435,78 @@ const useChatStore = create<ChatState>()(
         }
       },
 
+      applyReadState: (roomId, messageId, unreadCount) => {
+        set(state => {
+          const previous = state.rooms.find(room => room.id === roomId)
+          if ((previous?.last_read_message_id ?? 0) > messageId) return state
+          const rooms = state.rooms.map(room =>
+            room.id === roomId
+              ? { ...room, last_read_message_id: messageId, unread_count: unreadCount }
+              : room
+          )
+          return {
+            ...reconcileCurrentRoom(state, rooms),
+            mentions: state.mentions.map(mention =>
+              mention.roomId === roomId && mention.messageId <= messageId
+                ? { ...mention, isRead: true }
+                : mention
+            ),
+          }
+        })
+      },
+
+      updateMessage: message => {
+        const roomKey = String(message.room_id)
+        if (get().deletedMessageIds[roomKey]?.includes(message.id)) return
+        set(state => ({
+          messages: {
+            ...state.messages,
+            [roomKey]: (state.messages[roomKey] ?? []).map(existing => {
+              if (existing.id === message.id)
+                return (existing.revision ?? 0) > (message.revision ?? 0) ? existing : message
+              if (existing.reply_to_id === message.id)
+                return {
+                  ...existing,
+                  reply_to: {
+                    id: message.id,
+                    message: message.message,
+                    attachment_count: message.attachments?.length ?? 0,
+                    user: message.user,
+                    deleted: false,
+                  },
+                }
+              return existing
+            }),
+          },
+        }))
+      },
+
+      removeMessage: (roomId, messageId) => {
+        const roomKey = String(roomId)
+        chatCache.removeMessageFromCache(roomKey, messageId)
+        set(state => ({
+          deletedMessageIds: {
+            ...state.deletedMessageIds,
+            [roomKey]: [...new Set([...(state.deletedMessageIds[roomKey] ?? []), messageId])],
+          },
+          messages: {
+            ...state.messages,
+            [roomKey]: (state.messages[roomKey] ?? [])
+              .filter(message => message.id !== messageId)
+              .map(message =>
+                message.reply_to_id === messageId
+                  ? {
+                      ...message,
+                      reply_to: { id: messageId, deleted: true, message: null, user: null },
+                    }
+                  : message
+              ),
+          },
+        }))
+      },
+
       loadMessages: async (roomId, page = 1) => {
+        const generation = sessionGeneration
         const roomKey = String(roomId)
         if (get().loadingMessageRooms[roomKey]) return
         set(state => ({
@@ -408,15 +519,32 @@ const useChatStore = create<ChatState>()(
           const response = await apiGet<JsonApiPaginatedResponse<ChatMessage>>(
             `/chat/rooms/${roomId}/messages?page[number]=${page}`
           )
+          if (generation !== sessionGeneration) return
           const pagination = toPagination(response)
           set(state => ({
             messages: {
               ...state.messages,
-              [roomKey]: mergeMessages(state.messages[roomKey] ?? [], response.data),
+              [roomKey]: mergeMessages(state.messages[roomKey] ?? [], response.data)
+                .filter(message => !state.deletedMessageIds[roomKey]?.includes(message.id))
+                .map(message =>
+                  message.reply_to_id &&
+                  state.deletedMessageIds[roomKey]?.includes(message.reply_to_id)
+                    ? {
+                        ...message,
+                        reply_to: {
+                          id: message.reply_to_id,
+                          deleted: true,
+                          message: null,
+                          user: null,
+                        },
+                      }
+                    : message
+                ),
             },
             messagesPagination: { ...state.messagesPagination, [roomKey]: pagination },
           }))
         } catch (error) {
+          if (generation !== sessionGeneration) return
           if (error instanceof ApiRequestError && error.status === 404) {
             set(state => clearMissingCurrentRoom(state, roomId))
           } else {
@@ -430,9 +558,10 @@ const useChatStore = create<ChatState>()(
             setChatError(set, chatError)
           }
         } finally {
-          set(state => ({
-            loadingMessageRooms: { ...state.loadingMessageRooms, [roomKey]: false },
-          }))
+          if (generation === sessionGeneration)
+            set(state => ({
+              loadingMessageRooms: { ...state.loadingMessageRooms, [roomKey]: false },
+            }))
         }
       },
 
@@ -454,6 +583,30 @@ const useChatStore = create<ChatState>()(
       },
 
       // 用户在线状态操作
+      setLiveUsers: (roomId, users) => {
+        const key = String(roomId)
+        const normalized = users
+          .filter(user => Number.isFinite(Number(user.id)))
+          .map(user => ({
+            ...user,
+            id: Number(user.id),
+            email: user.email ?? '',
+            joined_at: user.joined_at ?? new Date().toISOString(),
+            is_online: true,
+          }))
+        set(state => ({
+          livePresenceRooms: { ...state.livePresenceRooms, [key]: true },
+          onlineUsers: { ...state.onlineUsers, [key]: normalized },
+          rooms: state.rooms.map(room =>
+            room.id === roomId ? { ...room, online_count: normalized.length } : room
+          ),
+          currentRoom:
+            state.currentRoom?.id === roomId
+              ? { ...state.currentRoom, online_count: normalized.length }
+              : state.currentRoom,
+        }))
+      },
+
       updateOnlineUsers: (roomId, users) => {
         set(state => ({
           onlineUsers: {
@@ -497,10 +650,12 @@ const useChatStore = create<ChatState>()(
 
       // Explicit room switches must not share a throttle with another room.
       loadOnlineUsers: async (roomId: number) => {
+        const generation = sessionGeneration
         try {
           const response = await apiGet<{ online_users: OnlineUser[]; count: number }>(
             `/chat/rooms/${roomId}/users`
           )
+          if (generation !== sessionGeneration || get().livePresenceRooms[String(roomId)]) return
           set(state => ({
             onlineUsers: {
               ...state.onlineUsers,
@@ -508,6 +663,7 @@ const useChatStore = create<ChatState>()(
             },
           }))
         } catch (error) {
+          if (generation !== sessionGeneration) return
           if (error instanceof ApiRequestError && error.status === 404) {
             set(state => ({
               ...clearMissingCurrentRoom(state, roomId),
@@ -520,6 +676,7 @@ const useChatStore = create<ChatState>()(
       },
 
       updateRoomOnlineCount: (roomId, onlineCount) => {
+        if (get().livePresenceRooms[String(roomId)]) return
         set(state => ({
           rooms: state.rooms.map(room =>
             room.id === roomId ? { ...room, online_count: onlineCount } : room
@@ -782,10 +939,13 @@ const useChatStore = create<ChatState>()(
       setLoading: loading => set({ isLoading: loading }),
 
       clearAllOnlineUsers: () => {
-        set({ onlineUsers: {}, typingByRoom: {} })
+        set({ onlineUsers: {}, livePresenceRooms: {}, typingByRoom: {} })
       },
 
-      reset: () => set(initialState),
+      reset: () => {
+        sessionGeneration += 1
+        set(initialState)
+      },
     }),
     {
       name: 'chat-storage',

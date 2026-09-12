@@ -208,6 +208,11 @@ describe('typeGuards', () => {
       })
 
       expect(msg).toEqual({
+        attachments: [],
+        reply_to_id: null,
+        reply_to: null,
+        edited_at: null,
+        revision: 0,
         id: 1,
         room_id: 2,
         user_id: 3,

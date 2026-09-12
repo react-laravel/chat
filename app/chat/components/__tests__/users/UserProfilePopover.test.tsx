@@ -75,16 +75,15 @@ describe('UserProfilePopover', () => {
     expect(getByText('Offline')).toBeInTheDocument()
   })
 
-  it('renders action buttons', () => {
-    const { getByRole } = render(
+  it('hides actions that have no implementation', () => {
+    const { queryByRole } = render(
       <UserProfilePopover user={mockUser}>
         <span>Trigger</span>
       </UserProfilePopover>
     )
-    expect(getByRole('button', { name: 'Message' })).toBeInTheDocument()
-    expect(getByRole('button', { name: 'Mention' })).toBeInTheDocument()
-    expect(getByRole('button', { name: 'Block' })).toBeInTheDocument()
-    expect(getByRole('button', { name: 'Report' })).toBeInTheDocument()
+    expect(queryByRole('button', { name: 'Message' })).toBeNull()
+    expect(queryByRole('button', { name: 'Block' })).toBeNull()
+    expect(queryByRole('button', { name: 'Report' })).toBeNull()
   })
 
   it('calls onDirectMessage when Message button clicked', async () => {

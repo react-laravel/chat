@@ -7,6 +7,7 @@ import {
   getConnectionMonitor,
   getAuthManager,
 } from '@/lib/websocket'
+import { getEchoInstance } from '@/lib/websocket/echo'
 import OfflineManager, { type OfflineState } from '@/lib/websocket/offline-manager'
 import type { UseChatWebSocketReturn, UseChatWebSocketOptions } from './chat-websocket/types'
 import {
@@ -139,6 +140,8 @@ export const useChatWebSocket = (options: UseChatWebSocketOptions = {}): UseChat
   }, [onConnect, onDisconnect, onError, echo])
 
   // 自动连接
+  const presenceChannelRef = useRef<{ stopListening: () => void } | null>(null)
+  const userChannelRef = useRef<{ stopListening: () => void } | null>(null)
   const ensureRoomListSubscription = useCallback(
     (echoInstance: Echo<'reverb'>) => {
       if (roomListChannelRef.current) {
@@ -148,6 +151,30 @@ export const useChatWebSocket = (options: UseChatWebSocketOptions = {}): UseChat
       const roomListChannel = createRoomListChannel(echoInstance)
       roomListChannelRef.current = roomListChannel
       setupRoomListEventListeners(roomListChannel, onMessage)
+      const userId = useAuthStore.getState().user?.id
+      if (userId && !userChannelRef.current) {
+        const name = `user.${userId}.notifications`
+        const channel = echoInstance.private(name)
+        channel.listen('.room.read', (data: unknown) =>
+          onMessage?.({ type: 'room_read', ...(data as object) })
+        )
+        channel.listen('.room.activity', (data: unknown) =>
+          onMessage?.({ type: 'room_activity', ...(data as object) })
+        )
+        channel.listen('.message.sent', (data: unknown) =>
+          onMessage?.({ type: 'message', ...(data as object) })
+        )
+        channel.listen('.message.updated', (data: unknown) =>
+          onMessage?.({ type: 'message_updated', ...(data as object) })
+        )
+        channel.listen('.message.deleted', (data: unknown) =>
+          onMessage?.({ type: 'message_deleted', ...(data as object) })
+        )
+        channel.listen('.user.banned', (data: unknown) =>
+          onMessage?.({ type: 'user_banned', ...(data as object) })
+        )
+        userChannelRef.current = { stopListening: () => echoInstance.leave(name) }
+      }
     },
     [onMessage]
   )
@@ -167,6 +194,10 @@ export const useChatWebSocket = (options: UseChatWebSocketOptions = {}): UseChat
           channelRef.current.stopListening()
         }
         roomListChannelRef.current?.stopListening()
+        presenceChannelRef.current?.stopListening()
+        presenceChannelRef.current = null
+        userChannelRef.current?.stopListening()
+        userChannelRef.current = null
         typingChannelRef.current?.stopListening()
         typingChannelRef.current = null
       } catch (error) {
@@ -188,7 +219,7 @@ export const useChatWebSocket = (options: UseChatWebSocketOptions = {}): UseChat
     }
 
     // 检查是否已有连接
-    if (echo && isEchoConnected(echo)) {
+    if (echo && getEchoInstance() === echo && isEchoConnected(echo)) {
       console.log('WebSocket: Reusing existing connection')
       return true
     }
@@ -271,6 +302,8 @@ export const useChatWebSocket = (options: UseChatWebSocketOptions = {}): UseChat
         return
       }
 
+      if (channelRef.current && currentRoomRef.current === roomId) return
+
       console.log('WebSocket: Attempting to join room:', roomId)
 
       let echoToUse = echoInstance || echo
@@ -290,6 +323,8 @@ export const useChatWebSocket = (options: UseChatWebSocketOptions = {}): UseChat
             console.log('WebSocket: Stopping listening for room', currentRoomRef.current)
             channelRef.current.stopListening()
           }
+          presenceChannelRef.current?.stopListening()
+          presenceChannelRef.current = null
           typingChannelRef.current?.stopListening()
           typingChannelRef.current = null
         } catch (error) {
@@ -311,12 +346,35 @@ export const useChatWebSocket = (options: UseChatWebSocketOptions = {}): UseChat
           onTyping?.(roomId, data)
         })
         typingChannelRef.current = typingChannel
+        const presenceName = `chat.room.${roomId}.presence`
+        echoToUse
+          .join(presenceName)
+          .here((users: unknown[]) =>
+            onMessage?.({ type: 'presence_here', room_id: Number(roomId), users })
+          )
+          .joining((user: unknown) =>
+            onMessage?.({ type: 'presence_joining', room_id: Number(roomId), user })
+          )
+          .leaving((user: unknown) =>
+            onMessage?.({ type: 'presence_leaving', room_id: Number(roomId), user })
+          )
+        presenceChannelRef.current = { stopListening: () => echoToUse.leave(presenceName) }
       } catch (error) {
         console.error('WebSocket: Error creating channel for room', roomId, ':', error)
       }
     },
     [echo, ensureRoomListSubscription, onMessage, onTyping]
   )
+
+  const leaveCurrentRoom = useCallback(() => {
+    channelRef.current?.stopListening()
+    typingChannelRef.current?.stopListening()
+    presenceChannelRef.current?.stopListening()
+    channelRef.current = null
+    typingChannelRef.current = null
+    presenceChannelRef.current = null
+    currentRoomRef.current = null
+  }, [])
 
   const sendTyping = useCallback((roomId: string) => {
     if (currentRoomRef.current !== roomId || !typingChannelRef.current) return
@@ -332,11 +390,12 @@ export const useChatWebSocket = (options: UseChatWebSocketOptions = {}): UseChat
   const sendMessage = useCallback(
     async (
       roomId: string,
-      message: string
+      message: string,
+      replyToId?: number,
+      attachmentIds?: number[]
     ): Promise<import('./chat-websocket/types').SendMessageResult> => {
       if (offlineState.isOffline || connectionInfo.status !== 'connected') {
-        offlineManagerRef.current?.queueMessage(roomId, message)
-        return offlineManagerRef.current ? { success: true } : { success: false }
+        return { success: false, errorMessage: '连接已断开，内容仍保留在草稿中。' }
       }
 
       let echoToUse = echo
@@ -344,12 +403,11 @@ export const useChatWebSocket = (options: UseChatWebSocketOptions = {}): UseChat
         const { getEchoInstance } = await import('@/lib/websocket/echo')
         echoToUse = getEchoInstance()
         if (!echoToUse) {
-          offlineManagerRef.current?.queueMessage(roomId, message)
-          return offlineManagerRef.current ? { success: true } : { success: false }
+          return { success: false, errorMessage: '连接尚未就绪，请稍后重试。' }
         }
       }
 
-      const result = await sendMessageToServer(roomId, message)
+      const result = await sendMessageToServer(roomId, message, replyToId, attachmentIds)
 
       if (result.success) {
         onMessageSentSuccess?.(result.data)
@@ -362,8 +420,9 @@ export const useChatWebSocket = (options: UseChatWebSocketOptions = {}): UseChat
   )
 
   const reconnect = useCallback(() => {
-    getConnectionMonitor().forceReconnect()
-  }, [])
+    if (getEchoInstance()) getConnectionMonitor().forceReconnect()
+    else void connect()
+  }, [connect])
 
   const retryFailedMessages = useCallback(() => {
     offlineManagerRef.current?.retryFailedMessages()
@@ -381,6 +440,7 @@ export const useChatWebSocket = (options: UseChatWebSocketOptions = {}): UseChat
       joinRoom,
       sendMessage,
       sendTyping,
+      leaveCurrentRoom,
       isConnected: connectionInfo.status === 'connected',
       connectionStatus: connectionInfo.status,
       connectionInfo,
@@ -396,6 +456,7 @@ export const useChatWebSocket = (options: UseChatWebSocketOptions = {}): UseChat
       joinRoom,
       sendMessage,
       sendTyping,
+      leaveCurrentRoom,
       connectionInfo,
       offlineState,
       reconnect,

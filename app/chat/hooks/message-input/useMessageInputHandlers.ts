@@ -1,8 +1,5 @@
 import { useCallback, useEffect } from 'react'
 import type React from 'react'
-import { toast } from '@/components/ui/use-toast'
-import { apiRequest } from '@/lib/api'
-import { isImageFile } from '@/app/chat/utils/message-input/utils'
 import type { ChatMessage } from '@/app/chat/types'
 import type { MentionSuggestion } from '@/app/chat/types/messageInput'
 
@@ -35,7 +32,6 @@ interface UseMessageInputHandlersParams {
   fileInputRef: React.RefObject<HTMLInputElement | null>
   textareaRef: React.RefObject<HTMLTextAreaElement | null>
   scrollContainerRef?: React.RefObject<HTMLElement | null>
-  handleFileUpload: (files: File[]) => Promise<void>
   inputContainerRef: React.RefObject<HTMLDivElement | null>
   onImageUploadSuccess?: () => void
 }
@@ -65,70 +61,9 @@ export function useMessageInputHandlers({
   fileInputRef,
   textareaRef,
   scrollContainerRef,
-  handleFileUpload,
   inputContainerRef,
   onImageUploadSuccess,
 }: UseMessageInputHandlersParams) {
-  // 处理文件输入变化
-  const handleFileInputChange = useCallback(
-    async (e: React.ChangeEvent<HTMLInputElement>) => {
-      const files = Array.from(e.target.files ?? [])
-      if (files.length === 0) return
-
-      const imageFiles = files.filter(file => isImageFile(file))
-      const otherFiles = files.filter(file => !isImageFile(file))
-
-      if (imageFiles.length > 0) {
-        const isMuted = checkMuteStatus()
-        if (isMuted) {
-          const muteMessage = muteUntil
-            ? `您在此房间被静音直到 ${new Date(muteUntil).toLocaleString()}`
-            : '您在此房间被静音'
-          toast.error(muteMessage)
-        } else if (!isConnected) {
-          toast.error(t('chat.not_connected', 'Not connected to chat server'))
-        } else {
-          try {
-            const formData = new FormData()
-            imageFiles.forEach(file => formData.append('images[]', file))
-
-            const uploadedImages = await apiRequest<
-              Array<{ url: string; origin_url?: string; path?: string; origin_path?: string }>
-            >('upload/images', 'POST', formData)
-
-            await Promise.all(
-              uploadedImages.map(image => sendMessage(roomId.toString(), image.url))
-            )
-            onImageUploadSuccess?.()
-          } catch (error) {
-            console.error('图片上传失败:', error)
-            toast.error(t('chat.file_processing_error', 'Error processing file'))
-          }
-        }
-      }
-
-      if (otherFiles.length > 0) {
-        await handleFileUpload(otherFiles)
-      }
-
-      // 清空输入
-      if (fileInputRef.current) {
-        fileInputRef.current.value = ''
-      }
-    },
-    [
-      roomId,
-      checkMuteStatus,
-      muteUntil,
-      isConnected,
-      sendMessage,
-      t,
-      handleFileUpload,
-      fileInputRef,
-      onImageUploadSuccess,
-    ]
-  )
-
   // 处理消息输入变化
   const handleTextareaChange = useCallback(
     (e: React.ChangeEvent<HTMLTextAreaElement>) => {
@@ -240,7 +175,6 @@ export function useMessageInputHandlers({
   }, [inputContainerRef])
 
   return {
-    handleFileInputChange,
     handleTextareaChange,
     handleMentionSelect,
     handleKeyDown,

@@ -109,3 +109,25 @@ describe('throttle', () => {
     })
   })
 })
+
+it('retains an update requested while the previous request is in flight', async () => {
+  vi.useFakeTimers()
+  let resolve!: () => void
+  const fn = vi
+    .fn()
+    .mockImplementationOnce(
+      () =>
+        new Promise<void>(done => {
+          resolve = done
+        })
+    )
+    .mockResolvedValue(undefined)
+  const throttled = createThrottledFunction(fn, 100)
+  const first = throttled('first')
+  throttled('latest')
+  resolve()
+  await first
+  await vi.advanceTimersByTimeAsync(100)
+  expect(fn).toHaveBeenNthCalledWith(2, 'latest')
+  vi.useRealTimers()
+})

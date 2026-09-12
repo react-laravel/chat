@@ -22,13 +22,13 @@ describe('channelUtils', () => {
     const roomChannel = createMockChannel()
     const roomCountChannel = createMockChannel()
     const echoInstance = {
-      channel: vi.fn().mockReturnValueOnce(roomChannel).mockReturnValueOnce(roomCountChannel),
+      private: vi.fn().mockReturnValueOnce(roomChannel).mockReturnValueOnce(roomCountChannel),
     }
 
     const wrapper = createChannelWrapper(echoInstance as never, '7')
 
-    expect(echoInstance.channel).toHaveBeenNthCalledWith(1, 'chat.room.7')
-    expect(echoInstance.channel).toHaveBeenNthCalledWith(2, 'chat-room-7')
+    expect(echoInstance.private).toHaveBeenNthCalledWith(1, 'chat.room.7')
+    expect(echoInstance.private).toHaveBeenNthCalledWith(2, 'chat-room-7')
     expect(wrapper.channel).toBe(roomChannel)
   })
 
@@ -64,12 +64,12 @@ describe('channelUtils', () => {
   it('subscribes to the global room list channel', () => {
     const roomListChannel = createMockChannel()
     const echoInstance = {
-      channel: vi.fn().mockReturnValue(roomListChannel),
+      private: vi.fn().mockReturnValue(roomListChannel),
     }
 
     const wrapper = createRoomListChannel(echoInstance as never)
 
-    expect(echoInstance.channel).toHaveBeenCalledWith('chat-rooms-list')
+    expect(echoInstance.private).toHaveBeenCalledWith('chat-rooms-list')
     expect(wrapper.channel).toBe(roomListChannel)
   })
 

@@ -1,4 +1,5 @@
 import Echo from 'laravel-echo'
+import type Pusher from 'pusher-js'
 import { getEchoInstance, destroyEchoInstance } from './echo'
 import WebSocketErrorHandler, { ConnectionError } from './error-handler'
 
@@ -19,6 +20,8 @@ export interface ConnectionMonitor {
 }
 
 class WebSocketConnectionMonitor {
+  private boundConnection: Pusher['connection'] | null = null
+  private removeBindings: (() => void) | null = null
   private status: ConnectionStatus = 'disconnected'
   private lastConnected: Date | null = null
   private reconnectAttempts = 0
@@ -64,33 +67,45 @@ class WebSocketConnectionMonitor {
   public initializeWithEcho(echo: Echo<'reverb'>) {
     console.log('🔥 ConnectionMonitor: 开始初始化，Echo实例:', !!echo)
     if (echo && echo.connector && echo.connector.pusher) {
+      const connection = echo.connector.pusher.connection
+      if (this.boundConnection === connection) return
+      this.removeBindings?.()
+      this.boundConnection = connection
+      const bindings: Array<{ event: string; callback: (data: unknown) => void }> = []
+      const bind = (event: string, callback: (data: unknown) => void) => {
+        connection.bind(event, callback)
+        bindings.push({ event, callback })
+      }
+      this.removeBindings = () =>
+        bindings.forEach(({ event, callback }) => connection.unbind(event, callback))
+
       console.log('🔥 ConnectionMonitor: Echo实例有效，开始绑定事件')
       // Pusher 连接事件
-      echo.connector.pusher.connection.bind('connected', () => {
+      bind('connected', () => {
         console.log('🔥 ConnectionMonitor: 连接成功事件触发')
-        this.updateStatus('connected')
         this.lastConnected = new Date()
         this.reconnectAttempts = 0
         this.lastError = null
         this.isRetrying = false
         this.errorHandler.resetRetryCount()
         this.clearReconnectTimeout()
+        this.updateStatus('connected')
         console.log('🔥 ConnectionMonitor: 状态已更新为connected')
       })
 
-      echo.connector.pusher.connection.bind('connecting', () => {
+      bind('connecting', () => {
         console.log('🔥 ConnectionMonitor: 正在连接事件触发')
         this.updateStatus('connecting')
       })
 
-      echo.connector.pusher.connection.bind('disconnected', () => {
+      bind('disconnected', () => {
         console.log('🔥 ConnectionMonitor: 连接断开事件触发')
         this.updateStatus('disconnected')
         // 暂时禁用自动重连以避免循环
         // this.scheduleReconnect()
       })
 
-      echo.connector.pusher.connection.bind('error', (error: unknown) => {
+      bind('error', (error: unknown) => {
         const connectionError = this.errorHandler.handleError(error, 'WebSocket connection')
         this.updateStatus('error')
 
@@ -104,7 +119,7 @@ class WebSocketConnectionMonitor {
         }
       })
 
-      echo.connector.pusher.connection.bind('unavailable', (error: unknown) => {
+      bind('unavailable', (error: unknown) => {
         const connectionError = this.errorHandler.handleError(
           error || { message: 'WebSocket unavailable' },
           'WebSocket unavailable'
@@ -122,7 +137,7 @@ class WebSocketConnectionMonitor {
       })
 
       // 额外的错误事件
-      echo.connector.pusher.connection.bind('failed', (error: unknown) => {
+      bind('failed', (error: unknown) => {
         const connectionError = this.errorHandler.handleError(error, 'WebSocket connection failed')
         this.updateStatus('error')
 
@@ -135,6 +150,13 @@ class WebSocketConnectionMonitor {
           this.scheduleReconnectWithErrorHandler()
         }
       })
+      if (connection.state === 'connected') {
+        this.lastConnected = new Date()
+        this.lastError = null
+        this.isRetrying = false
+        this.reconnectAttempts = 0
+        this.updateStatus('connected')
+      } else this.updateStatus(connection.state === 'connecting' ? 'connecting' : 'disconnected')
     }
   }
 
@@ -234,6 +256,9 @@ class WebSocketConnectionMonitor {
   }
 
   public destroy() {
+    this.removeBindings?.()
+    this.removeBindings = null
+    this.boundConnection = null
     this.clearReconnectTimeout()
     this.errorHandler.destroy()
     this.listeners = []

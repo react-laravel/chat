@@ -1,10 +1,11 @@
 import type { Metadata, Viewport } from 'next'
 import { Toaster } from 'sonner'
+import { ThemeBootstrap } from '@/components/ThemeBootstrap'
 import { AuthBootstrap } from '@/components/AuthBootstrap'
 import './globals.css'
 
 export const metadata: Metadata = {
-  title: 'DogeOW Chat',
+  title: process.env.NEXT_PUBLIC_COMMUNITY_NAME || 'DogeOW Chat',
   description: '可嵌入 DogeOW 子站的独立实时聊天服务',
 }
 
@@ -22,6 +23,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
   return (
     <html lang="zh-CN">
       <body>
+        <ThemeBootstrap />
         <AuthBootstrap />
         {children}
         <Toaster richColors position="top-center" />

@@ -1,7 +1,6 @@
 'use client'
 
-import React from 'react'
-import { Search } from 'lucide-react'
+import { Search, Reply, Loader2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import {
@@ -9,107 +8,144 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
+  DialogDescription,
 } from '@/components/ui/dialog'
-import type { ChatMessage } from '@/app/chat/types'
-import { useMessageSearch } from '@/app/chat/hooks/message-search/useMessageSearch'
+import type { ChatMessage } from '../../types'
+import { useRoomMessageSearch } from '../../hooks/message-search/useRoomMessageSearch'
+import { MessageAttachments } from '../MessageAttachments'
+import { messageText } from '../../utils/message-text'
 
 interface MessageSearchProps {
-  messages: ChatMessage[]
-  onMessageSelect?: (messageId: number) => void
+  roomId: number
+  roomName: string
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  onReply?: (message: ChatMessage) => void
 }
 
-/**
- * 消息搜索对话框
- */
-export function MessageSearchDialog({ messages, onMessageSelect }: MessageSearchProps) {
-  const {
-    searchQuery,
-    setSearchQuery,
-    visibleMessages,
-    isOpen,
-    setIsOpen,
-    handleMessageSelect,
-    hasMore,
-    loadMore,
-  } = useMessageSearch(messages, onMessageSelect)
-
-  const highlightText = (text: string, query: string) => {
-    if (!query.trim()) return text
-    const escaped = query.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\\\$&')
-    const regex = new RegExp(`(${escaped})`, 'gi')
-    const parts = text.split(regex)
-
-    return parts.map((part, index) =>
-      regex.test(part) ? (
-        <mark key={index} className="bg-primary/20 text-foreground rounded px-0.5">
-          {part}
-        </mark>
-      ) : (
-        <span key={index}>{part}</span>
-      )
-    )
-  }
-
+function Highlight({ text, query }: { text: string; query: string }) {
+  if (!query.trim()) return <>{text}</>
+  const escaped = query.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
   return (
-    <Dialog open={isOpen} onOpenChange={setIsOpen}>
-      <DialogTrigger asChild>
-        <Button variant="outline" size="sm">
-          <Search className="mr-2 h-4 w-4" />
-          Search Messages
-        </Button>
-      </DialogTrigger>
-      <DialogContent className="max-h-[80vh] max-w-2xl">
+    <>
+      {text.split(new RegExp(`(${escaped})`, 'gi')).map((part, index) =>
+        index % 2 === 1 ? (
+          <mark key={index} className="rounded bg-primary/20 px-0.5 text-foreground">
+            {part}
+          </mark>
+        ) : (
+          part
+        )
+      )}
+    </>
+  )
+}
+
+export function MessageSearchDialog({
+  roomId,
+  roomName,
+  open,
+  onOpenChange,
+  onReply,
+}: MessageSearchProps) {
+  const search = useRoomMessageSearch(roomId, open)
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="flex max-h-[85dvh] flex-col gap-4 sm:max-w-2xl">
         <DialogHeader>
-          <DialogTitle>Search Messages</DialogTitle>
+          <DialogTitle>搜索消息</DialogTitle>
+          <DialogDescription>搜索「{roomName}」中的完整聊天记录。</DialogDescription>
         </DialogHeader>
-        <div className="space-y-4">
+        <div className="relative">
+          <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
           <Input
-            placeholder="Search messages..."
-            value={searchQuery}
-            onChange={e => setSearchQuery(e.target.value)}
-            className="w-full"
+            autoFocus
+            maxLength={200}
+            value={search.query}
+            onChange={event => search.setQuery(event.target.value)}
+            placeholder="输入消息内容或成员名称"
+            aria-label="搜索聊天记录"
+            className="pl-9"
           />
-
-          {searchQuery.trim() && (
-            <div className="max-h-96 space-y-2 overflow-y-auto">
-              {visibleMessages.length > 0 ? (
-                visibleMessages.map(message => (
-                  <div
-                    key={message.id}
-                    onClick={() => handleMessageSelect(message.id)}
-                    className="hover:bg-muted/50 cursor-pointer rounded-lg border p-3 transition-colors"
-                  >
-                    <div className="mb-1 flex items-center gap-2">
-                      <span className="text-sm font-medium">
-                        {highlightText(message.user.name, searchQuery)}
-                      </span>
-                      <span className="text-muted-foreground text-xs">
-                        {new Date(message.created_at).toLocaleString()}
-                      </span>
-                    </div>
-                    <p className="text-muted-foreground line-clamp-2 text-sm">
-                      {highlightText(message.message, searchQuery)}
-                    </p>
+        </div>
+        {!search.query.trim() ? (
+          <div className="py-12 text-center text-sm text-muted-foreground">
+            <Search className="mx-auto mb-3 h-8 w-8 opacity-40" />
+            找回重要的讨论与灵感
+          </div>
+        ) : (
+          <>
+            <div
+              className="flex items-center justify-between text-xs text-muted-foreground"
+              role="status"
+            >
+              <span>{search.loading ? '搜索中…' : `找到 ${search.total} 条消息`}</span>
+              {search.loading && <Loader2 className="h-4 w-4 animate-spin" />}
+            </div>
+            {search.error && (
+              <div
+                role="alert"
+                className="flex items-center justify-between rounded-lg bg-destructive/5 p-3 text-sm"
+              >
+                <span>{search.error}</span>
+                <Button variant="outline" size="sm" onClick={() => void search.retry()}>
+                  重试
+                </Button>
+              </div>
+            )}
+            <div className="min-h-0 space-y-3 overflow-y-auto">
+              {search.results.map(message => (
+                <article key={message.id} className="group rounded-xl border p-3 sm:p-4">
+                  <div className="mb-2 flex items-center justify-between gap-3">
+                    <span className="text-sm font-medium">
+                      <Highlight text={message.user.name} query={search.query} />
+                    </span>
+                    <time className="shrink-0 text-xs text-muted-foreground">
+                      {new Date(message.created_at).toLocaleString()}
+                    </time>
                   </div>
-                ))
-              ) : (
-                <div className="text-muted-foreground py-8 text-center">
-                  <Search className="mx-auto mb-2 h-8 w-8 opacity-50" />
-                  <p>No messages found</p>
-                </div>
+                  <p className="whitespace-pre-wrap break-words text-sm leading-6 [overflow-wrap:anywhere]">
+                    <Highlight text={messageText(message.message)} query={search.query} />
+                  </p>
+                  <MessageAttachments attachments={message.attachments ?? []} />
+                  {onReply && message.message_type === 'text' && (
+                    <div className="mt-2 flex justify-end">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 gap-1 text-xs"
+                        onClick={() => {
+                          onReply({ ...message, message: messageText(message.message) })
+                          onOpenChange(false)
+                        }}
+                      >
+                        <Reply className="h-3.5 w-3.5" />
+                        回复这条消息
+                      </Button>
+                    </div>
+                  )}
+                </article>
+              ))}
+              {!search.loading && !search.error && search.results.length === 0 && (
+                <p className="py-10 text-center text-sm text-muted-foreground">
+                  没有找到匹配的消息，试试其他关键词。
+                </p>
               )}
-
-              {hasMore && (
-                <div className="flex justify-center pt-2">
-                  <Button variant="outline" size="sm" onClick={loadMore}>
-                    Load more
+              {search.hasMore && (
+                <div className="flex justify-center py-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={search.loading}
+                    onClick={() => void search.loadMore()}
+                  >
+                    加载更多结果
                   </Button>
                 </div>
               )}
             </div>
-          )}
-        </div>
+          </>
+        )}
       </DialogContent>
     </Dialog>
   )

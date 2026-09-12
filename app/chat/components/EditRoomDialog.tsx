@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
+import { roomFormSchema } from '../utils/room-form-schema'
 import { Loader2 } from 'lucide-react'
 import {
   Dialog,
@@ -27,23 +28,12 @@ import { Textarea } from '@/components/ui/textarea'
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
 import { put } from '@/lib/api'
+import { toast } from '@/components/ui/use-toast'
 import useChatStore from '@/app/chat/chatStore'
 import type { ChatRoom } from '../types'
 import { useTranslation } from '@/hooks/useTranslation'
 
-const editRoomSchema = z.object({
-  name: z
-    .string()
-    .min(1, 'Room name is required')
-    .min(3, 'Room name must be at least 3 characters')
-    .max(50, 'Room name must be less than 50 characters')
-    .regex(
-      /^[a-zA-Z0-9\s\-_]+$/,
-      'Room name can only contain letters, numbers, spaces, hyphens, and underscores'
-    ),
-  description: z.string().max(200, 'Description must be less than 200 characters').optional(),
-  is_private: z.boolean(),
-})
+const editRoomSchema = roomFormSchema
 
 type EditRoomFormData = z.infer<typeof editRoomSchema>
 
@@ -80,19 +70,26 @@ export function EditRoomDialog({ room, open, onOpenChange }: EditRoomDialogProps
     setIsSubmitting(true)
 
     try {
-      await put(`/chat/rooms/${room.id}`, {
+      const response = await put<{ room: ChatRoom }>(`/chat/rooms/${room.id}`, {
         name: data.name.trim(),
         description: data.description?.trim() || null,
         is_private: data.is_private ?? false,
       })
 
-      // Reload rooms to get updated data
-      await loadRooms()
+      if (response?.room) {
+        const state = useChatStore.getState()
+        state.setRooms(
+          state.rooms.map(item => (item.id === room.id ? { ...item, ...response.room } : item))
+        )
+      } else {
+        await loadRooms()
+      }
+      toast.success('房间已更新')
 
       // Close dialog
       onOpenChange(false)
     } catch (error) {
-      console.error('Failed to update room:', error)
+      toast.error(error instanceof Error ? error.message : '更新房间失败，请重试')
       // Error is handled by the API helper and will be displayed as a toast
     } finally {
       setIsSubmitting(false)
@@ -134,7 +131,7 @@ export function EditRoomDialog({ room, open, onOpenChange }: EditRoomDialogProps
                     />
                   </FormControl>
                   <FormDescription>
-                    {t('chat.room_name_description', '一个独特的聊天房间名称（3-50个字符）')}
+                    {t('chat.room_name_hint', '最多20个字符，汉字按2个计算')}
                   </FormDescription>
                   <FormMessage />
                 </FormItem>
@@ -156,10 +153,7 @@ export function EditRoomDialog({ room, open, onOpenChange }: EditRoomDialogProps
                     />
                   </FormControl>
                   <FormDescription>
-                    {t(
-                      'chat.room_description_description',
-                      '帮助其他人理解这个房间的用途（最多200个字符）'
-                    )}
+                    {t('chat.room_description_hint', '可选，最多500个字符')}
                   </FormDescription>
                   <FormMessage />
                 </FormItem>

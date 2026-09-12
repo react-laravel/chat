@@ -2,6 +2,7 @@
 
 import * as React from 'react'
 import { UsersIcon, MessageSquareIcon } from 'lucide-react'
+import { AccountMenu } from './AccountMenu'
 import { ChatRoomList } from './ChatRoomList'
 import { OnlineUsers } from './OnlineUsers'
 import ConnectionStatusIndicator from './ConnectionStatusIndicator'
@@ -18,7 +19,7 @@ interface ChatSidebarProps {
   onReconnect: () => void
   onRetryMessages: () => void
   onClearQueue: () => void
-  onMentionUser?: () => void
+  onMentionUser?: (username: string) => void
   onDirectMessage?: () => void
   onBlockUser?: () => void
   onReportUser?: () => void
@@ -41,10 +42,10 @@ function ChatSidebar({
   onReconnect,
   onRetryMessages,
   onClearQueue,
-  onMentionUser = () => {},
-  onDirectMessage = () => {},
-  onBlockUser = () => {},
-  onReportUser = () => {},
+  onMentionUser,
+  onDirectMessage,
+  onBlockUser,
+  onReportUser,
 }: ChatSidebarProps) {
   const { t } = useTranslation()
 
@@ -55,7 +56,7 @@ function ChatSidebar({
           <div className="flex items-center justify-between">
             <h2 className="flex items-center gap-2 font-semibold">
               <MessageSquareIcon className="h-5 w-5" />
-              {t('chat.chat_rooms', 'Chat Rooms')}
+              {process.env.NEXT_PUBLIC_COMMUNITY_NAME || t('chat.chat_rooms', 'Chat Rooms')}
             </h2>
             {/* Connection Status - Desktop - 放在同一行 */}
             <ConnectionStatusIndicator
@@ -72,6 +73,7 @@ function ChatSidebar({
         <div className="flex-1 overflow-hidden">
           <ChatRoomList showHeader={false} />
         </div>
+        <AccountMenu />
       </div>
     )
   }

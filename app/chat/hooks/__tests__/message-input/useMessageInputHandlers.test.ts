@@ -35,7 +35,6 @@ describe('useMessageInputHandlers', () => {
       useMessageInputHandlers(createMockParams() as Parameters<typeof useMessageInputHandlers>[0])
     )
 
-    expect(typeof result.current.handleFileInputChange).toBe('function')
     expect(typeof result.current.handleTextareaChange).toBe('function')
     expect(typeof result.current.handleMentionSelect).toBe('function')
     expect(typeof result.current.handleKeyDown).toBe('function')

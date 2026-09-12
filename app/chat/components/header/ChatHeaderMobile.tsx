@@ -1,5 +1,5 @@
 import React, { memo } from 'react'
-import { ArrowLeft, Settings, Users, Hash, MenuIcon } from 'lucide-react'
+import { ArrowLeft, Settings, Users, Hash, Search, ChevronDown, MenuIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { useTranslation } from '@/hooks/useTranslation'
@@ -14,6 +14,8 @@ interface ChatHeaderMobileProps {
   onBack?: () => void
   onOpenRoomList?: () => void
   onOpenUsersList?: () => void
+  onSearch?: () => void
+  onOpenRoomInfo?: () => void
   onOpenNotificationSettings: () => void
 }
 
@@ -28,6 +30,8 @@ export const ChatHeaderMobile = memo<ChatHeaderMobileProps>(
     onOpenRoomList,
     onOpenUsersList,
     onOpenNotificationSettings,
+    onSearch,
+    onOpenRoomInfo,
   }) => {
     const { t } = useTranslation()
 
@@ -65,7 +69,15 @@ export const ChatHeaderMobile = memo<ChatHeaderMobileProps>(
           <div className="flex min-w-0 items-center gap-1">
             <Hash className="text-muted-foreground h-4 w-4 shrink-0" />
             <div className="flex min-w-0 items-center gap-1">
-              <h1 className="truncate font-semibold">{room.name}</h1>
+              <button
+                type="button"
+                onClick={onOpenRoomInfo}
+                className="flex min-w-0 items-center gap-1 rounded-md text-left hover:text-primary"
+                aria-label={`房间信息：${room.name}`}
+              >
+                <h1 className="truncate font-semibold">{room.name}</h1>
+                <ChevronDown className="h-3 w-3 shrink-0 text-muted-foreground" />
+              </button>
               <span
                 className={`h-2 w-2 shrink-0 rounded-full ${
                   isConnected
@@ -123,6 +135,17 @@ export const ChatHeaderMobile = memo<ChatHeaderMobileProps>(
           )}
 
           {/* 设置按钮：直接打开通知设置 */}
+          {onSearch && (
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={onSearch}
+              aria-label="搜索消息"
+              title="搜索消息（⌘ / Ctrl + K）"
+            >
+              <Search className="h-4 w-4" />
+            </Button>
+          )}
           <Button variant="ghost" size="icon" onClick={onOpenNotificationSettings}>
             <Settings className="h-4 w-4" />
             <span className="sr-only">{t('chat.notification_settings', '通知设置')}</span>

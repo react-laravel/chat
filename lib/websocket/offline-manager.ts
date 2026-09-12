@@ -1,3 +1,4 @@
+import useAuthStore from '@/stores/authStore'
 import { getAuthTokenFromStorage } from '@/lib/utils/storage'
 import { authenticatedBrowserFetch } from '@/lib/api/browser-auth'
 import { API_URL } from '@/lib/api/url'
@@ -10,11 +11,11 @@ const STORAGE_KEY = 'chat-offline-queue'
 /**
  * Extract storage operations to reduce OfflineManager complexity
  */
-function loadQueueFromStorage(): QueuedMessage[] {
+function loadQueueFromStorage(storageKey: string): QueuedMessage[] {
   if (typeof window === 'undefined') return []
 
   try {
-    const stored = localStorage.getItem(STORAGE_KEY)
+    const stored = localStorage.getItem(storageKey)
     if (stored) {
       const parsed = JSON.parse(stored)
       return parsed.map((msg: unknown) => ({
@@ -28,11 +29,11 @@ function loadQueueFromStorage(): QueuedMessage[] {
   return []
 }
 
-function saveQueueToStorage(queuedMessages: QueuedMessage[]): void {
+function saveQueueToStorage(queuedMessages: QueuedMessage[], storageKey: string): void {
   if (typeof window === 'undefined') return
 
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(queuedMessages))
+    localStorage.setItem(storageKey, JSON.stringify(queuedMessages))
   } catch (error) {
     console.warn('Failed to save offline queue to storage:', error)
   }
@@ -42,6 +43,7 @@ export interface QueuedMessage {
   id: string
   roomId: string
   message: string
+  replyToId?: number
   timestamp: Date
   retryCount: number
   maxRetries: number
@@ -67,6 +69,10 @@ export interface OfflineManagerOptions {
 }
 
 class OfflineManager {
+  private readonly ownerId = useAuthStore.getState().user?.id
+  private readonly storageKey = `${STORAGE_KEY}:${this.ownerId ?? 'anonymous'}`
+  private destroyed = false
+  private processing = false
   private isOffline = false
   private lastOnline: Date | null = null
   private queuedMessages: QueuedMessage[] = []
@@ -80,7 +86,7 @@ class OfflineManager {
     this.maxRetries = options.maxRetries || 3
 
     this.setupNetworkListeners()
-    this.queuedMessages = loadQueueFromStorage()
+    this.queuedMessages = loadQueueFromStorage(this.storageKey)
   }
 
   private setupNetworkListeners(): void {
@@ -127,7 +133,7 @@ class OfflineManager {
     this.notifyListeners()
   }
 
-  public queueMessage(roomId: string, message: string): QueuedMessage {
+  public queueMessage(roomId: string, message: string, replyToId?: number): QueuedMessage {
     // Check if queue is full
     if (this.queuedMessages.length >= this.maxQueueSize) {
       // Remove oldest message to make room
@@ -142,6 +148,7 @@ class OfflineManager {
       id: this.generateMessageId(),
       roomId,
       message,
+      replyToId,
       timestamp: new Date(),
       retryCount: 0,
       maxRetries: this.maxRetries,
@@ -159,14 +166,22 @@ class OfflineManager {
   }
 
   public async processQueuedMessages(): Promise<void> {
-    if (this.isOffline || this.queuedMessages.length === 0) {
+    if (
+      this.processing ||
+      this.destroyed ||
+      this.ownerId !== useAuthStore.getState().user?.id ||
+      this.isOffline ||
+      this.queuedMessages.length === 0
+    ) {
       return
     }
 
+    this.processing = true
     // Process messages in order
     const messagesToProcess = [...this.queuedMessages]
 
     for (const queuedMessage of messagesToProcess) {
+      if (this.destroyed || this.ownerId !== useAuthStore.getState().user?.id) break
       try {
         await this.sendQueuedMessage(queuedMessage)
         this.removeFromQueue(queuedMessage.id)
@@ -187,6 +202,7 @@ class OfflineManager {
       }
     }
 
+    this.processing = false
     this.persistQueue()
     this.notifyListeners()
   }
@@ -199,7 +215,10 @@ class OfflineManager {
       {
         method: 'POST',
         token,
-        body: JSON.stringify({ message: queuedMessage.message }),
+        body: JSON.stringify({
+          message: queuedMessage.message,
+          reply_to_id: queuedMessage.replyToId,
+        }),
       }
     )
 
@@ -222,7 +241,7 @@ class OfflineManager {
   }
 
   private persistQueue(): void {
-    saveQueueToStorage(this.queuedMessages)
+    saveQueueToStorage(this.queuedMessages, this.storageKey)
   }
 
   public getState(): OfflineState {
@@ -269,6 +288,7 @@ class OfflineManager {
   }
 
   public destroy(): void {
+    this.destroyed = true
     if (this.networkListener) {
       this.networkListener()
       this.networkListener = null

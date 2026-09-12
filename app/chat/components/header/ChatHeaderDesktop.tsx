@@ -1,5 +1,5 @@
 import React, { memo } from 'react'
-import { ArrowLeft, Settings, Users, Hash } from 'lucide-react'
+import { ArrowLeft, Settings, Users, Hash, Search, ChevronDown } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { useTranslation } from '@/hooks/useTranslation'
@@ -12,6 +12,9 @@ interface ChatHeaderDesktopProps {
   connectionStatus: 'connecting' | 'connected' | 'disconnected'
   onlineCount: number
   onBack?: () => void
+  onOpenUsersList?: () => void
+  onSearch?: () => void
+  onOpenRoomInfo?: () => void
   onOpenNotificationSettings: () => void
 }
 
@@ -23,7 +26,10 @@ export const ChatHeaderDesktop = memo<ChatHeaderDesktopProps>(
     connectionStatus,
     onlineCount,
     onBack,
+    onOpenUsersList,
     onOpenNotificationSettings,
+    onSearch,
+    onOpenRoomInfo,
   }) => {
     const { t } = useTranslation()
 
@@ -44,7 +50,15 @@ export const ChatHeaderDesktop = memo<ChatHeaderDesktopProps>(
           <div className="min-w-0">
             <div className="flex min-w-0 items-center gap-3">
               <Hash className="text-muted-foreground h-4 w-4" />
-              <h1 className="truncate font-semibold">{room.name}</h1>
+              <button
+                type="button"
+                onClick={onOpenRoomInfo}
+                className="flex min-w-0 items-center gap-1 rounded-md text-left hover:text-primary"
+                aria-label={`房间信息：${room.name}`}
+              >
+                <h1 className="truncate font-semibold">{room.name}</h1>
+                <ChevronDown className="h-3 w-3 shrink-0 text-muted-foreground" />
+              </button>
               <div className="flex items-center gap-1 text-xs">
                 <div
                   className={`h-2 w-2 rounded-full ${isConnected ? 'bg-green-500' : connectionStatus === 'connecting' ? 'animate-pulse bg-amber-500' : 'bg-red-500'}`}
@@ -64,12 +78,29 @@ export const ChatHeaderDesktop = memo<ChatHeaderDesktopProps>(
         {/* 右侧 - 操作按钮 */}
         <div className="flex items-center gap-2">
           {/* 在线用户数量 */}
-          <div className="flex items-center gap-1">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={onOpenUsersList}
+            className="gap-1.5"
+            aria-label="打开用户列表"
+          >
             <Users className="text-muted-foreground h-4 w-4" />
             <Badge variant="secondary" className="text-xs">
               {onlineCount}
             </Badge>
-          </div>
+          </Button>
+          {onSearch && (
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={onSearch}
+              aria-label="搜索消息"
+              title="搜索消息（⌘ / Ctrl + K）"
+            >
+              <Search className="h-4 w-4" />
+            </Button>
+          )}
           <Button variant="ghost" size="icon" onClick={onOpenNotificationSettings}>
             <Settings className="h-4 w-4" />
             <span className="sr-only">{t('chat.notification_settings', '通知设置')}</span>

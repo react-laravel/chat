@@ -39,7 +39,8 @@ export const formatFileSize = (bytes: number): string => {
 }
 
 // 消息相关工具函数
-export const getDraftKey = (roomId: number): string => `chat-draft-${roomId}`
+export const getDraftKey = (roomId: number, userId?: number): string =>
+  userId ? `chat-draft-${userId}-${roomId}` : `chat-draft-${roomId}`
 
 export const truncateMessage = (message: string, maxLength: number = 50): string => {
   return message.length > maxLength ? `${message.slice(0, maxLength)}...` : message

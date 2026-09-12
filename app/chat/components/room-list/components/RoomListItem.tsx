@@ -57,6 +57,11 @@ export const RoomListItem = memo<RoomListItemProps>(
               )}
               {isFavorite && <Star className="h-3 w-3 fill-current text-yellow-500" />}
             </div>
+            {room.description && (
+              <p className="mt-1 line-clamp-1 pl-6 text-xs text-muted-foreground">
+                {room.description}
+              </p>
+            )}
           </div>
 
           {/* 人数和房间操作 */}
@@ -85,7 +90,13 @@ export const RoomListItem = memo<RoomListItemProps>(
             {/* 人数 - 始终靠右 */}
             <div className="text-muted-foreground flex items-center gap-1 text-xs">
               <Users className="h-3 w-3" />
-              <span>{room.online_count ?? 0}</span>
+              {(room.unread_count ?? 0) > 0 ? (
+                <span className="rounded-full bg-primary px-1.5 py-0.5 font-medium text-primary-foreground">
+                  {room.unread_count! > 99 ? '99+' : room.unread_count}
+                </span>
+              ) : (
+                <span>{room.online_count ?? 0}</span>
+              )}
             </div>
           </div>
         </div>

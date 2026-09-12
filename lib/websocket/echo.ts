@@ -113,15 +113,14 @@ export function createEchoInstance(): Echo<'reverb'> | null {
   }
 
   // 复用前校验：localStorage 中的 token 若已变化（过期刷新、多标签页登录等），必须重建实例
-  const currentToken = getAuthTokenFromStorage()
+  cancelDestroyEchoInstance()
+  const currentToken = getAuthTokenFromStorage() || ''
 
-  const tokenChanged =
-    echoInstance &&
-    (currentToken !== lastAuthToken || (currentToken === '' && lastAuthToken !== null))
+  const tokenChanged = echoInstance && currentToken !== (lastAuthToken ?? '')
 
   if (tokenChanged) {
     console.log('Echo: token 已变化，销毁旧实例并重建')
-    destroyEchoInstance()
+    destroyEchoInstance(true)
     lastAuthToken = null
   }
 
@@ -254,7 +253,7 @@ export function createEchoInstance(): Echo<'reverb'> | null {
     // 若当前 token 与已有实例创建时使用的 token 不同，必须重建
     if (authToken !== previousToken) {
       console.log('Echo: 认证已变化，销毁已有实例并重新创建')
-      destroyEchoInstance()
+      destroyEchoInstance(true)
     } else {
       try {
         if (echoInstance.connector && 'pusher' in echoInstance.connector) {
@@ -271,7 +270,7 @@ export function createEchoInstance(): Echo<'reverb'> | null {
         console.warn('Echo: 检查现有连接状态失败:', error)
       }
       console.log('Echo: 销毁已有实例并重新创建')
-      destroyEchoInstance()
+      destroyEchoInstance(true)
     }
   }
 
@@ -295,6 +294,7 @@ export function createEchoInstance(): Echo<'reverb'> | null {
     // 用新实例初始化连接监控（可选）
     try {
       import('./connection-monitor').then(({ getConnectionMonitor }) => {
+        if (echoInstance !== echo) return
         const monitor = getConnectionMonitor()
         if (monitor && typeof monitor.initializeWithEcho === 'function') {
           monitor.initializeWithEcho(echo as Echo<'reverb'>)
@@ -380,8 +380,9 @@ export function destroyEchoInstance(immediate = false): void {
       clearTimeout(destroyTimer)
     }
 
+    const scheduledInstance = echoInstance
     destroyTimer = setTimeout(() => {
-      if (echoInstance) {
+      if (echoInstance === scheduledInstance) {
         console.log('Echo: 执行延迟销毁')
         performDestroy()
       } else {
@@ -393,6 +394,7 @@ export function destroyEchoInstance(immediate = false): void {
   }
 
   // 立即销毁
+  cancelDestroyEchoInstance()
   performDestroy()
 }
 

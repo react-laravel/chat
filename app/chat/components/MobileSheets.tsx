@@ -2,6 +2,7 @@
 
 import { UsersIcon, MessageSquareIcon } from 'lucide-react'
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet'
+import { AccountMenu } from './AccountMenu'
 import { ChatRoomList } from './ChatRoomList'
 import { OnlineUsers } from './OnlineUsers'
 import { useTranslation } from '@/hooks/useTranslation'
@@ -13,7 +14,7 @@ interface MobileSheetsProps {
   currentRoom?: ChatRoom | null
   onRoomListOpenChange: (open: boolean) => void
   onUsersListOpenChange: (open: boolean) => void
-  onMentionUser?: () => void
+  onMentionUser?: (username: string) => void
   onDirectMessage?: () => void
   onBlockUser?: () => void
   onReportUser?: () => void
@@ -25,15 +26,15 @@ function MobileSheets({
   currentRoom,
   onRoomListOpenChange,
   onUsersListOpenChange,
-  onMentionUser = () => {},
-  onDirectMessage = () => {},
-  onBlockUser = () => {},
-  onReportUser = () => {},
+  onMentionUser,
+  onDirectMessage,
+  onBlockUser,
+  onReportUser,
 }: MobileSheetsProps) {
   const { t } = useTranslation()
 
   return (
-    <div className="lg:hidden">
+    <div>
       {/* 房间列表 Sheet */}
       <Sheet open={isRoomListOpen} onOpenChange={onRoomListOpenChange}>
         <SheetContent side="left" className="w-72 p-0" onOpenAutoFocus={e => e.preventDefault()}>
@@ -46,6 +47,7 @@ function MobileSheets({
           <div className="flex-1 overflow-hidden">
             <ChatRoomList onRoomSelect={() => onRoomListOpenChange(false)} showHeader={false} />
           </div>
+          <AccountMenu />
         </SheetContent>
       </Sheet>
 

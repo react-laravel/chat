@@ -2,6 +2,7 @@ import { beforeEach, it, expect, vi } from 'vitest'
 import useChatStore from '../chatStore'
 import { get, post, ApiRequestError } from '@/lib/api'
 import type { ChatMessage } from '../types'
+import type { ChatRoom } from '../types'
 
 vi.mock('@/lib/api', async importOriginal => ({
   ...(await importOriginal<object>()),
@@ -63,4 +64,22 @@ it('refreshes the online users of each room during rapid room switches', async (
   await useChatStore.getState().loadOnlineUsers(2)
   expect(get).toHaveBeenCalledTimes(2)
   expect(useChatStore.getState().onlineUsers['2']).toEqual([{ id: 2, name: '小林' }])
+})
+
+it('does not resurrect a deleted message from a delayed history response', async () => {
+  useChatStore.setState({ messages: { '1': [message(1)] } })
+  useChatStore.getState().removeMessage(1, 1)
+  vi.mocked(get).mockResolvedValueOnce({ data: [message(1)], current_page: 1, last_page: 1 })
+  await useChatStore.getState().loadMessages(1)
+  expect(useChatStore.getState().messages['1']).toEqual([])
+})
+
+it('accepts fresh directory counts after leaving a room presence subscription', () => {
+  const rooms = [1, 2].map(id => ({ id, name: `Room ${id}` }) as ChatRoom)
+  useChatStore.getState().setRooms(rooms)
+  useChatStore.getState().setCurrentRoom(rooms[0])
+  useChatStore.getState().setLiveUsers(1, [])
+  useChatStore.getState().setCurrentRoom(rooms[1])
+  useChatStore.getState().setRooms([{ ...rooms[0], online_count: 3 }, rooms[1]])
+  expect(useChatStore.getState().rooms[0].online_count).toBe(3)
 })

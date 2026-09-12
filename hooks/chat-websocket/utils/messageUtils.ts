@@ -10,7 +10,9 @@ import type { ConnectionError } from '@/lib/websocket/error-handler'
  */
 export const sendMessageToServer = async (
   roomId: string,
-  message: string
+  message: string,
+  replyToId?: number,
+  attachmentIds?: number[]
 ): Promise<{ success: boolean; data?: unknown; error?: ConnectionError }> => {
   try {
     const authManager = getAuthManager()
@@ -20,7 +22,7 @@ export const sendMessageToServer = async (
       {
         method: 'POST',
         token,
-        body: JSON.stringify({ message }),
+        body: JSON.stringify({ message, reply_to_id: replyToId, attachment_ids: attachmentIds }),
       }
     )
 
@@ -64,18 +66,11 @@ export const sendMessageToServer = async (
           }
         }
 
-        // 尝试刷新 token
-        const newToken = token ? await authManager.refreshToken() : null
-        if (newToken) {
-          // 递归重试
-          return sendMessageToServer(roomId, message)
-        }
-
         return {
           success: false,
           error: {
-            type: 'authentication',
-            message: 'Authentication failed - token expired and refresh failed',
+            type: 'permission',
+            message: errorMessage || 'You cannot send messages in this room.',
             timestamp: new Date(),
             retryable: false,
           },

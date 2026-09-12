@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import { prepareChatSession, clearChatSession } from './chatSession'
 import { ApiError, apiRequest } from '@/lib/api'
 
 export interface ChatUser {
@@ -19,6 +20,7 @@ interface AuthState {
   token: null
   isAuthenticated: boolean
   loading: boolean
+  signedOut: boolean
   restoreSession: () => Promise<ChatUser | null>
   exchangeTicket: (ticket: string, context?: EmbedContext) => Promise<ChatUser>
   logout: () => Promise<void>
@@ -26,25 +28,42 @@ interface AuthState {
 }
 
 function loginUrl(context?: EmbedContext): string {
-  const accountUrl = (process.env.NEXT_PUBLIC_ACCOUNT_URL || 'https://next.dogeow.com').replace(/\/$/, '')
+  const accountUrl = (process.env.NEXT_PUBLIC_ACCOUNT_URL || 'https://next.dogeow.com').replace(
+    /\/$/,
+    ''
+  )
   return `${accountUrl}/auth/sso/chat?return_to=${encodeURIComponent(window.location.href)}`
 }
+
+let sessionRequestId = 0
 
 const useAuthStore = create<AuthState>(set => ({
   user: null,
   token: null,
   isAuthenticated: false,
   loading: true,
+  signedOut: false,
 
   restoreSession: async () => {
+    const requestId = ++sessionRequestId
+    try {
+      if (typeof window !== 'undefined' && sessionStorage.getItem('chat-signed-out') === 'true') {
+        set({ user: null, isAuthenticated: false, loading: false, signedOut: true })
+        return null
+      }
+    } catch {}
     set({ loading: true })
     try {
       const user = await apiRequest<ChatUser>('/user', 'GET', undefined, {
         suppressUnauthorizedRedirect: true,
       })
-      set({ user, isAuthenticated: true, loading: false })
+      if (requestId !== sessionRequestId) return user
+      await prepareChatSession(user.id, () => requestId === sessionRequestId)
+      if (requestId !== sessionRequestId) return user
+      set({ user, isAuthenticated: true, loading: false, signedOut: false })
       return user
     } catch (error) {
+      if (requestId !== sessionRequestId) return null
       if (error instanceof ApiError && error.status === 401) {
         set({ user: null, isAuthenticated: false, loading: false })
         return null
@@ -55,6 +74,11 @@ const useAuthStore = create<AuthState>(set => ({
   },
 
   exchangeTicket: async (ticket, context) => {
+    try {
+      sessionStorage.removeItem('chat-signed-out')
+    } catch {}
+    set({ signedOut: false })
+    const requestId = ++sessionRequestId
     set({ loading: true })
     try {
       const user = await apiRequest<ChatUser>(
@@ -65,24 +89,40 @@ const useAuthStore = create<AuthState>(set => ({
           : { ticket },
         { suppressUnauthorizedRedirect: true }
       )
-      set({ user, isAuthenticated: true, loading: false })
+      if (requestId !== sessionRequestId) return user
+      await prepareChatSession(user.id, () => requestId === sessionRequestId)
+      if (requestId !== sessionRequestId) return user
+      set({ user, isAuthenticated: true, loading: false, signedOut: false })
       return user
     } catch (error) {
-      set({ user: null, isAuthenticated: false, loading: false })
+      if (requestId === sessionRequestId)
+        set({ user: null, isAuthenticated: false, loading: false })
       throw error
     }
   },
 
   logout: async () => {
+    const requestId = ++sessionRequestId
     try {
       await apiRequest('/auth/logout', 'POST', undefined, { suppressUnauthorizedRedirect: true })
-    } finally {
-      set({ user: null, isAuthenticated: false, loading: false })
+    } catch (error) {
+      if (!(error instanceof ApiError && error.status === 401)) throw error
     }
+    if (requestId !== sessionRequestId) return
+    await clearChatSession(() => requestId === sessionRequestId)
+    if (requestId !== sessionRequestId) return
+    try {
+      sessionStorage.setItem('chat-signed-out', 'true')
+    } catch {}
+    set({ user: null, isAuthenticated: false, loading: false, signedOut: true })
   },
 
   beginLogin: context => {
     if (typeof window === 'undefined') return
+    try {
+      sessionStorage.removeItem('chat-signed-out')
+    } catch {}
+    set({ signedOut: false })
     const target = loginUrl(context)
     if (context) {
       window.open(target, 'dogeow-chat-login', 'popup,width=520,height=720')

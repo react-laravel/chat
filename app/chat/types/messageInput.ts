@@ -1,5 +1,6 @@
 export interface MessageInputProps {
   roomId: number
+  mentionRequest?: { id: number; roomId: number; name: string } | null
   replyingTo?: {
     room_id?: number
     id: number
@@ -10,9 +11,14 @@ export interface MessageInputProps {
   className?: string
   sendMessage: (
     roomId: string,
-    message: string
+    message: string,
+    replyToId?: number,
+    attachmentIds?: number[]
   ) => Promise<{ success: true } | { success: false; errorMessage?: string }>
   isConnected: boolean
+  attachmentIds?: number[]
+  attachmentsBusy?: boolean
+  onAttachmentsSent?: (ids: number[]) => void
   scrollContainerRef?: React.RefObject<HTMLElement | null>
   onTypingStart?: () => void
   onTypingStop?: () => void

@@ -74,6 +74,15 @@ export const normalizeIncomingMessage = (value: unknown): ChatMessage | null => 
     user_id: userId,
     message: typeof source.message === 'string' ? source.message : '',
     message_type: source.message_type === 'system' ? 'system' : 'text',
+    attachments: Array.isArray(source.attachments)
+      ? (source.attachments as ChatMessage['attachments'])
+      : [],
+    reply_to_id: typeof source.reply_to_id === 'number' ? source.reply_to_id : null,
+    reply_to: isRecord(source.reply_to)
+      ? (source.reply_to as unknown as ChatMessage['reply_to'])
+      : null,
+    edited_at: typeof source.edited_at === 'string' ? source.edited_at : null,
+    revision: typeof source.revision === 'number' ? source.revision : 0,
     created_at: createdAt,
     updated_at: updatedAt,
     user: {

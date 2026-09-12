@@ -61,14 +61,14 @@ export const createChannelWrapper = (
   channel: ReturnType<Echo<'reverb'>['channel']>
   roomEventChannel: ReturnType<Echo<'reverb'>['channel']>
 } => {
-  const channel = echoInstance.channel(`chat.room.${roomId}`)
+  const channel = echoInstance.private(`chat.room.${roomId}`)
   console.log('WebSocket: Created channel for room', roomId, 'channel:', channel)
 
   if (!channel) {
     throw new Error(`Failed to create channel for room ${roomId}`)
   }
 
-  const roomEventChannel = echoInstance.channel(`chat-room-${roomId}`)
+  const roomEventChannel = echoInstance.private(`chat-room-${roomId}`)
   console.log('WebSocket: ✅ 房间人数频道创建成功')
 
   return {
@@ -106,8 +106,8 @@ export const createChannelWrapper = (
           console.log('WebSocket: Cannot stop listening without callback, event:', event)
         } else {
           try {
-            channel.stopListening('*', () => {})
-            roomEventChannel.stopListening('*', () => {})
+            echoInstance.leave(`chat.room.${roomId}`)
+            echoInstance.leave(`chat-room-${roomId}`)
           } catch {
             console.warn('WebSocket: Using alternative cleanup method')
           }
@@ -122,7 +122,7 @@ export const createChannelWrapper = (
 }
 
 export const createRoomListChannel = (echoInstance: Echo<'reverb'>): RoomListChannelWrapper => {
-  const channel = echoInstance.channel('chat-rooms-list')
+  const channel = echoInstance.private('chat-rooms-list')
 
   return {
     listen: (event: string, callback: (data: unknown) => void) => {
@@ -167,8 +167,18 @@ export const setupRoomEventListeners = (
     if (typedData?.message) safeOnMessage({ message: typedData.message }, 'message')
   })
 
+  channelWrapper.listen('.message.updated', (data: unknown) =>
+    safeOnMessage(data, 'message_updated')
+  )
+  channelWrapper.listen('.message.deleted', (data: unknown) =>
+    safeOnMessage(data, 'message_deleted')
+  )
+
   channelWrapper.listen('.user.joined', (data: unknown) => safeOnMessage(data, 'user_joined'))
   channelWrapper.listen('.user.left', (data: unknown) => safeOnMessage(data, 'user_left'))
+  channelWrapper.listen('.user.muted', (data: unknown) => safeOnMessage(data, 'user_muted'))
+  channelWrapper.listen('.user.unmuted', (data: unknown) => safeOnMessage(data, 'user_unmuted'))
+  channelWrapper.listen('.user.banned', (data: unknown) => safeOnMessage(data, 'user_banned'))
 
   channelWrapper.listen('Chat\\MessageSent', (data: unknown) => {
     const typedData = data as { message?: unknown }

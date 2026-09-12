@@ -8,8 +8,12 @@ import { format, isToday, isYesterday } from 'date-fns'
 
 import { cn } from '@/lib/helpers'
 import useChatStore from '@/app/chat/chatStore'
+import { useRoomReadState } from '../hooks/useRoomReadState'
 import { useMessageScroll } from '@/app/chat/hooks/message-list/useMessageScroll'
 import type { ChatMessage } from '../types'
+import { normalizeIncomingMessage } from '../utils/typeGuards'
+import { messageText as plainMessageText } from '../utils/message-text'
+import { MessageAttachments } from './MessageAttachments'
 import { MessageInteractions } from './MessageInteractions'
 import { MentionHighlight, useMentionDetection } from './MentionHighlight'
 import { useTranslation } from '@/hooks/useTranslation'
@@ -41,48 +45,9 @@ interface MessageItemProps {
 
 const EMPTY_MESSAGES: ChatMessage[] = []
 
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === 'object' && value !== null
-
 const toRenderableMessage = (raw: ChatMessage): ChatMessage | null => {
-  const source = raw as unknown as Record<string, unknown>
-  const id = Number(source.id)
-  const roomId = Number(source.room_id)
-  const userId = Number(source.user_id)
-
-  if (!Number.isFinite(id) || !Number.isFinite(roomId) || !Number.isFinite(userId)) {
-    return null
-  }
-
-  const message =
-    typeof source.message === 'string'
-      ? source.message.replace(/<mention\b[^>]*>(.*?)<\/mention>/gis, '$1')
-      : ''
-  const createdAtRaw = typeof source.created_at === 'string' ? source.created_at : ''
-  const createdAt = createdAtRaw || new Date().toISOString()
-  const updatedAtRaw = typeof source.updated_at === 'string' ? source.updated_at : ''
-  const updatedAt = updatedAtRaw || createdAt
-
-  const userSource = isRecord(source.user) ? source.user : null
-  const normalizedUserId = Number(userSource?.id ?? userId)
-
-  return {
-    id,
-    room_id: roomId,
-    user_id: userId,
-    message,
-    message_type: source.message_type === 'system' ? 'system' : 'text',
-    created_at: createdAt,
-    updated_at: updatedAt,
-    user: {
-      id: Number.isFinite(normalizedUserId) ? normalizedUserId : userId,
-      name: typeof userSource?.name === 'string' && userSource.name ? userSource.name : 'Unknown',
-      email: typeof userSource?.email === 'string' ? userSource.email : '',
-    },
-    reactions: Array.isArray(source.reactions)
-      ? (source.reactions as ChatMessage['reactions'])
-      : undefined,
-  }
+  const message = normalizeIncomingMessage(raw)
+  return message ? { ...message, message: plainMessageText(message.message) } : null
 }
 
 const MessageItem = React.memo(function MessageItem({
@@ -99,7 +64,7 @@ const MessageItem = React.memo(function MessageItem({
   return (
     <div
       className={cn(
-        'group/message relative rounded-xl px-3 py-2 pr-10 transition-colors',
+        'group/message relative rounded-xl px-3 py-2 pr-10 transition-colors sm:pr-16',
         mentionInfo.hasCurrentUserMention
           ? 'bg-yellow-50 dark:bg-yellow-950/20'
           : isOwn
@@ -107,6 +72,20 @@ const MessageItem = React.memo(function MessageItem({
             : 'bg-muted/40 hover:bg-muted/60'
       )}
     >
+      {message.reply_to && (
+        <div className="mb-2 rounded-md border-l-2 border-primary/50 bg-background/60 px-2.5 py-1.5 text-xs">
+          <span className="font-medium">
+            {message.reply_to.deleted ? '原消息已删除' : message.reply_to.user?.name}
+          </span>
+          {!message.reply_to.deleted && (
+            <p className="mt-0.5 line-clamp-2 whitespace-pre-wrap text-muted-foreground">
+              {plainMessageText(
+                message.reply_to.message || (message.reply_to.attachment_count ? '[附件]' : '')
+              )}
+            </p>
+          )}
+        </div>
+      )}
       <div className="max-w-none text-sm leading-7 [overflow-wrap:anywhere]">
         {isImageUrl ? (
           <Image
@@ -125,6 +104,15 @@ const MessageItem = React.memo(function MessageItem({
           <MentionHighlight text={messageText} className="break-words whitespace-pre-wrap" />
         )}
       </div>
+      <MessageAttachments attachments={message.attachments ?? []} />
+      {message.edited_at && (
+        <span
+          className="mt-1 block text-[11px] text-muted-foreground"
+          title={new Date(message.edited_at).toLocaleString()}
+        >
+          已编辑
+        </span>
+      )}
       <MessageInteractions message={message} onReply={onReply} onReact={onReact} />
     </div>
   )
@@ -239,6 +227,8 @@ function MessageListContent({
 
     return normalized
   }, [messagesForRoom, roomId])
+
+  useRoomReadState(roomId, renderableMessages, scrollContainerRef)
 
   const hasSearchQuery = useMemo(() => !!searchQuery?.trim(), [searchQuery])
 

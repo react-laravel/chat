@@ -70,7 +70,7 @@ describe('MessageInput', () => {
     const view = render(<MessageInput {...defaultProps} />)
 
     expect(view.getByRole('textbox', { name: /message input/i })).toBeInTheDocument()
-    expect(view.queryByRole('button', { name: /upload file/i })).not.toBeInTheDocument()
+    expect(view.getByRole('button', { name: /upload file/i })).toBeInTheDocument()
     expect(view.getByRole('button', { name: /select emoji/i })).toBeInTheDocument()
     expect(view.getByRole('button', { name: /send message/i })).toBeInTheDocument()
     expect(view.getByTestId('file-input')).toBeInTheDocument()
@@ -111,7 +111,7 @@ describe('MessageInput', () => {
     expect(sendMessage).not.toHaveBeenCalled()
   })
 
-  it('renders reply indicator and sends with reply prefix', async () => {
+  it('renders reply indicator and sends a structured reply', async () => {
     const user = userEvent.setup()
     const sendMessage = vi.fn(() => Promise.resolve(successResult))
     const onCancelReply = vi.fn()
@@ -139,7 +139,7 @@ describe('MessageInput', () => {
     await user.click(sendButton)
 
     await waitFor(() => {
-      expect(sendMessage).toHaveBeenCalledWith('1', '@Alice reply body')
+      expect(sendMessage).toHaveBeenCalledWith('1', 'reply body', 1)
     })
     expect(onCancelReply).toHaveBeenCalledTimes(1)
 
@@ -166,7 +166,8 @@ describe('MessageInput', () => {
     const view = render(<MessageInput {...defaultProps} />)
 
     const textarea = view.getByRole('textbox', { name: /message input/i })
-    await user.type(textarea, 'a'.repeat(MAX_MESSAGE_LENGTH + 20))
+    fireEvent.change(textarea, { target: { value: 'a'.repeat(MAX_MESSAGE_LENGTH) } })
+    await user.type(textarea, 'overflow')
 
     expect((textarea as HTMLTextAreaElement).value.length).toBe(MAX_MESSAGE_LENGTH)
   })

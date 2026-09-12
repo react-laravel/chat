@@ -10,7 +10,13 @@ export interface UseChatWebSocketReturn {
   connect: (roomId?: string) => Promise<boolean>
   disconnect: () => void
   joinRoom: (roomId: string, echoInstance?: Echo<'reverb'>) => void
-  sendMessage: (roomId: string, message: string) => Promise<SendMessageResult>
+  sendMessage: (
+    roomId: string,
+    message: string,
+    replyToId?: number,
+    attachmentIds?: number[]
+  ) => Promise<SendMessageResult>
+  leaveCurrentRoom: () => void
   sendTyping: (roomId: string) => void
   isConnected: boolean
   connectionStatus: ConnectionStatus

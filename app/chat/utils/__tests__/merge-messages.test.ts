@@ -10,3 +10,14 @@ it('orders overlapping descending history pages and realtime messages once', () 
     )
   ).toEqual([1, 2, 3, 4, 5])
 })
+
+it('keeps newer revisions when history arrives after a realtime update', () => {
+  const current = {
+    id: 1,
+    created_at: '2026-09-12T00:00:00Z',
+    message: 'Edited',
+    revision: 2,
+  } as ChatMessage
+  const stale = { ...current, message: 'Before', revision: 1 }
+  expect(mergeMessages([current], [stale])[0].message).toBe('Edited')
+})

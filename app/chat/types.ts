@@ -12,6 +12,23 @@ export interface ChatRoom {
   message_count?: number
   last_activity?: string
   unread_count?: number
+  last_read_message_id?: number | null
+}
+
+export interface ChatAttachment {
+  id: number
+  name: string
+  mime_type: string
+  size: number
+  url: string
+}
+
+export interface MessageReply {
+  id: number
+  attachment_count?: number
+  deleted?: boolean
+  message: string | null
+  user: { id: number; name: string } | null
 }
 
 export interface ChatMessage {
@@ -20,6 +37,11 @@ export interface ChatMessage {
   user_id: number
   message: string
   message_type: 'text' | 'system'
+  reply_to_id?: number | null
+  reply_to?: MessageReply | null
+  edited_at?: string | null
+  revision?: number
+  attachments?: ChatAttachment[]
   created_at: string
   updated_at: string
   user: {
@@ -32,6 +54,7 @@ export interface ChatMessage {
     label: string
     count: number
     userReacted: boolean
+    user_ids?: number[]
   }>
 }
 
@@ -85,6 +108,11 @@ export type Message = ChatMessage
 // WebSocket 消息处理相关类型
 export interface MessageData {
   type: string
+  users?: OnlineUser[]
+  user?: OnlineUser
+  message_id?: number
+  last_read_message_id?: number
+  unread_count?: number
   message?: ChatMessage
   user_id?: number
   room_id?: number

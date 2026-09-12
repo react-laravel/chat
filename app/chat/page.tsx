@@ -4,6 +4,8 @@
 
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
+import { post as apiPost, ApiError } from '@/lib/api'
+import type { ChatRoom } from './types'
 import { Button } from '@/components/ui/button'
 import {
   MessageList,
@@ -31,7 +33,7 @@ const noop = () => {}
 // 节流时间常量
 const LOAD_THROTTLE_TIME = 5000
 
-function ChatPageContent() {
+function ChatPageContent({ initialRoomId }: { initialRoomId?: number }) {
   const router = useRouter()
   const { isAuthenticated, loading: authLoading, token } = useAuthStore()
   const {
@@ -69,6 +71,12 @@ function ChatPageContent() {
 
   // 移动端状态
   const { isRoomListOpen, isUsersListOpen, setRoomListOpen, setUsersListOpen } = useChatUIStore()
+  const [inviteNotice, setInviteNotice] = useState<string | null>(null)
+  const [mentionRequest, setMentionRequest] = useState<{
+    id: number
+    roomId: number
+    name: string
+  } | null>(null)
   const [joinedRoomId, setJoinedRoomId] = useState<number | null>(null)
   const [joinAttempt, setJoinAttempt] = useState(0)
   const [joinFailure, setJoinFailure] = useState<{ roomId: number; message: string } | null>(null)
@@ -126,7 +134,10 @@ function ChatPageContent() {
         switch (messageData.type) {
           case 'user_muted':
           case 'user_unmuted': {
-            if (messageData.user_id === currentUserId) {
+            if (
+              messageData.user_id === currentUserId &&
+              messageData.room_id === useChatStore.getState().currentRoom?.id
+            ) {
               updateMuteStatus(
                 messageData.type === 'user_muted',
                 messageData.muted_until,
@@ -140,6 +151,58 @@ function ChatPageContent() {
           case 'user.left.room': {
             if (messageData.room_id && messageData.online_count !== undefined) {
               updateRoomOnlineCount(messageData.room_id, messageData.online_count)
+            }
+            break
+          }
+
+          case 'user_banned': {
+            if (messageData.user_id === currentUserId && messageData.room_id) {
+              const state = useChatStore.getState()
+              state.clearMessages(messageData.room_id)
+              if (state.currentRoom?.id === messageData.room_id) state.setCurrentRoom(null)
+            }
+            break
+          }
+          case 'presence_here': {
+            if (messageData.room_id && Array.isArray(messageData.users))
+              useChatStore.getState().setLiveUsers(messageData.room_id, messageData.users)
+            break
+          }
+          case 'presence_joining':
+          case 'presence_leaving': {
+            if (messageData.room_id && messageData.user) {
+              const state = useChatStore.getState()
+              const users = state.onlineUsers[String(messageData.room_id)] ?? []
+              const next = users.filter(user => user.id !== messageData.user?.id)
+              if (messageData.type === 'presence_joining') next.push(messageData.user)
+              state.setLiveUsers(messageData.room_id, next)
+            }
+            break
+          }
+          case 'room_read': {
+            if (messageData.room_id && messageData.last_read_message_id)
+              useChatStore
+                .getState()
+                .applyReadState(
+                  messageData.room_id,
+                  messageData.last_read_message_id,
+                  messageData.unread_count ?? 0
+                )
+            break
+          }
+          case 'room_activity': {
+            void useChatStore.getState().loadRooms()
+            break
+          }
+          case 'message_updated': {
+            const message = normalizeIncomingMessage(messageData.message)
+            if (message) useChatStore.getState().updateMessage(message)
+            break
+          }
+          case 'message_deleted': {
+            if (messageData.room_id && messageData.message_id) {
+              useChatStore.getState().removeMessage(messageData.room_id, messageData.message_id)
+              setReplyingTo(reply => (reply?.id === messageData.message_id ? null : reply))
             }
             break
           }
@@ -212,7 +275,7 @@ function ChatPageContent() {
   // WebSocket连接配置 - 使用 useMemo 优化
   const webSocketConfig = useMemo(
     () => ({
-      autoConnect: false,
+      autoConnect: isAuthenticated && !authLoading,
       onConnect: webSocketHandlers.handleConnect,
       onDisconnect: webSocketHandlers.handleDisconnect,
       onError: webSocketHandlers.handleWebSocketError,
@@ -226,7 +289,13 @@ function ChatPageContent() {
       onMessageSentSuccess: handleMessageSentSuccess,
       authTokenRefreshCallback,
     }),
-    [webSocketHandlers, handleMessageSentSuccess, authTokenRefreshCallback]
+    [
+      webSocketHandlers,
+      handleMessageSentSuccess,
+      authTokenRefreshCallback,
+      isAuthenticated,
+      authLoading,
+    ]
   )
 
   // WebSocket连接
@@ -235,12 +304,20 @@ function ChatPageContent() {
     joinRoom: wsJoinRoom,
     sendMessage,
     sendTyping,
+    leaveCurrentRoom,
     connectionInfo,
     offlineState,
     reconnect,
     retryFailedMessages,
     clearOfflineQueue,
   } = useChatWebSocket(webSocketConfig)
+
+  const previousActiveRoom = useRef<number | null>(null)
+  const activeRoomId = currentRoom?.id
+  useEffect(() => {
+    if (previousActiveRoom.current !== null && !activeRoomId) leaveCurrentRoom?.()
+    previousActiveRoom.current = activeRoomId ?? null
+  }, [activeRoomId, leaveCurrentRoom])
 
   // 鉴权检查
   useEffect(() => {
@@ -273,8 +350,44 @@ function ChatPageContent() {
 
     const initializeChat = async () => {
       try {
+        let invitedRoom: ChatRoom | null = null
+        const url = new URL(window.location.href)
+        const invite = url.searchParams.get('invite')
+        if (invite) {
+          setInviteNotice('正在加入受邀房间…')
+          try {
+            const response = await apiPost<{ room: ChatRoom }>('/chat/invites/accept', {
+              token: invite,
+            })
+            invitedRoom = response.room
+            setInviteNotice(null)
+          } catch (error) {
+            setInviteNotice(
+              error instanceof ApiError && error.status === 404
+                ? '邀请链接不存在或已失效。'
+                : error instanceof Error
+                  ? error.message
+                  : '加入房间失败，请重试。'
+            )
+          } finally {
+            url.searchParams.delete('invite')
+            window.history.replaceState(
+              window.history.state,
+              '',
+              url.pathname + url.search + url.hash
+            )
+          }
+        }
         clearAllOnlineUsers()
         await loadRooms()
+        if (invitedRoom) useChatStore.getState().setCurrentRoom(invitedRoom)
+        else if (initialRoomId) {
+          const preferred = useChatStore.getState().rooms.find(room => room.id === initialRoomId)
+          if (preferred) {
+            await useChatStore.getState().joinRoom(preferred.id)
+            useChatStore.getState().setCurrentRoom(preferred)
+          }
+        }
 
         // WebSocket连接失败不阻断初始化流程
         connect().catch(noop)
@@ -285,7 +398,15 @@ function ChatPageContent() {
     }
 
     initializeChat()
-  }, [isAuthenticated, authLoading, connect, loadRooms, handleError, clearAllOnlineUsers])
+  }, [
+    isAuthenticated,
+    authLoading,
+    connect,
+    loadRooms,
+    handleError,
+    clearAllOnlineUsers,
+    initialRoomId,
+  ])
 
   // Restore server presence before enabling sends, including after a reconnect.
   useEffect(() => {
@@ -301,6 +422,7 @@ function ChatPageContent() {
         setJoinedRoomId(roomId)
         setJoinFailure(null)
         await Promise.all([
+          useChatStore.getState().loadRooms(),
           useChatStore.getState().loadMessages(roomId),
           useChatStore.getState().loadOnlineUsers(roomId),
         ])
@@ -327,6 +449,16 @@ function ChatPageContent() {
     handleError,
   ])
 
+  useEffect(() => {
+    if (!activeRoomId || joinedRoomId !== activeRoomId || connectionInfo.status !== 'connected')
+      return
+    const roomId = activeRoomId
+    const timer = setInterval(() => {
+      void apiPost(`/chat/rooms/${roomId}/status`, {}).catch(noop)
+    }, 30000)
+    return () => clearInterval(timer)
+  }, [activeRoomId, joinedRoomId, connectionInfo.status])
+
   // 渲染逻辑优化
   if (authLoading) return <ChatPageSkeleton />
   if (!isAuthenticated) return null
@@ -341,6 +473,17 @@ function ChatPageContent() {
       retryAction={retryAction}
     >
       <div className="chat-page-shell bg-background safe-area-top flex min-h-0 flex-col overflow-hidden">
+        {inviteNotice && (
+          <div
+            role="status"
+            className="flex items-center justify-between border-b bg-muted/40 px-4 py-2 text-sm"
+          >
+            <span>{inviteNotice}</span>
+            <Button size="sm" variant="ghost" onClick={() => setInviteNotice(null)}>
+              关闭
+            </Button>
+          </div>
+        )}
         <div className="flex min-h-0 flex-1 overflow-hidden">
           {/* Room List Sidebar - Desktop */}
           <ChatSidebar
@@ -362,22 +505,23 @@ function ChatPageContent() {
               currentRoom={currentRoom}
               onRoomListOpenChange={setRoomListOpen}
               onUsersListOpenChange={setUsersListOpen}
+              onMentionUser={name => {
+                if (currentRoom) {
+                  setMentionRequest({ id: Date.now(), roomId: currentRoom.id, name })
+                  setUsersListOpen(false)
+                }
+              }}
             />
 
             {currentRoom ? (
               <>
-                {/* Chat Header - 桌面端和移动端 */}
-                <div className="hidden flex-none lg:block">
-                  <ChatHeader room={currentRoom} showBackButton={false} />
-                </div>
-                <div className="chat-header-container flex-none lg:hidden">
-                  <ChatHeader
-                    room={currentRoom}
-                    showBackButton={false}
-                    onOpenRoomList={mobileHandlers.handleOpenRoomList}
-                    onOpenUsersList={mobileHandlers.handleOpenUsersList}
-                  />
-                </div>
+                <ChatHeader
+                  room={currentRoom}
+                  showBackButton={false}
+                  onOpenRoomList={mobileHandlers.handleOpenRoomList}
+                  onOpenUsersList={mobileHandlers.handleOpenUsersList}
+                  onReply={mobileHandlers.handleReply}
+                />
 
                 {/* Messages - 优化移动端高度 */}
                 <div
@@ -414,6 +558,7 @@ function ChatPageContent() {
                 <div className="chat-input-area-mobile flex-none">
                   <MessageInput
                     roomId={currentRoom.id}
+                    mentionRequest={mentionRequest}
                     replyingTo={replyingTo?.room_id === currentRoom.id ? replyingTo : null}
                     onCancelReply={mobileHandlers.cancelReply}
                     sendMessage={sendMessage}
@@ -430,27 +575,16 @@ function ChatPageContent() {
               <ChatWelcome onOpenRoomList={mobileHandlers.handleOpenRoomList} />
             )}
           </div>
-
-          {/* Online Users Sidebar - Desktop */}
-          <ChatSidebar
-            type="users"
-            currentRoom={currentRoom}
-            connectionInfo={connectionInfo}
-            offlineState={offlineState}
-            onReconnect={reconnect}
-            onRetryMessages={retryFailedMessages}
-            onClearQueue={clearOfflineQueue}
-          />
         </div>
       </div>
     </ChatErrorHandler>
   )
 }
 
-export default function ChatPage() {
+export default function ChatPage({ initialRoomId }: { initialRoomId?: number } = {}) {
   return (
     <ChatErrorBoundary>
-      <ChatPageContent />
+      <ChatPageContent initialRoomId={initialRoomId} />
     </ChatErrorBoundary>
   )
 }

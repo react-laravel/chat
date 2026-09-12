@@ -60,6 +60,7 @@ const mocks = vi.hoisted(() => {
     authState,
     webSocketState,
     push: vi.fn(),
+    handleError: vi.fn(),
   }
 })
 
@@ -119,7 +120,7 @@ vi.mock('../components/ChatErrorBoundary', () => ({
   default: ({ children }: { children: React.ReactNode }) => <>{children}</>,
   useChatErrorHandler: () => ({
     error: null,
-    handleError: vi.fn(),
+    handleError: mocks.handleError,
     clearError: vi.fn(),
     retryAction: vi.fn(),
   }),
@@ -169,7 +170,7 @@ describe('ChatPage', () => {
 
     expect(screen.getByText('chat-welcome')).toBeInTheDocument()
     expect(screen.getByText('sidebar-rooms-disconnected')).toBeInTheDocument()
-    expect(screen.getByText('sidebar-users-disconnected')).toBeInTheDocument()
+    expect(screen.queryByText('sidebar-users-disconnected')).not.toBeInTheDocument()
   })
 
   it('enables the composer only after restoring server room membership', async () => {
@@ -186,7 +187,7 @@ describe('ChatPage', () => {
 
     render(<ChatPage />)
 
-    expect(screen.getAllByText('header-General')).toHaveLength(2)
+    expect(screen.getAllByText('header-General')).toHaveLength(1)
     expect(screen.getByText('message-list-7')).toBeInTheDocument()
     expect(screen.getByText('message-input-7-disconnected')).toBeInTheDocument()
     await waitFor(() => expect(screen.getByText('message-input-7-connected')).toBeInTheDocument())

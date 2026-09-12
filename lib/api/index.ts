@@ -44,7 +44,7 @@ export async function apiRequest<T>(
   endpoint: string,
   method = 'GET',
   data?: unknown,
-  options: { suppressUnauthorizedRedirect?: boolean } = {}
+  options: { suppressUnauthorizedRedirect?: boolean; signal?: AbortSignal } = {}
 ): Promise<T> {
   const normalizedMethod = method.toUpperCase()
   const path = endpoint.startsWith('/') ? endpoint : `/${endpoint}`
@@ -64,6 +64,7 @@ export async function apiRequest<T>(
   const response = await fetch(`/api${path}`, {
     method: normalizedMethod,
     credentials: 'include',
+    signal: options.signal,
     headers,
     body: data === undefined ? undefined : isFormData ? data : JSON.stringify(data),
   })
@@ -79,7 +80,11 @@ export async function apiRequest<T>(
       response.status,
       payload as Record<string, unknown> | undefined
     )
-    if (response.status === 401 && !options.suppressUnauthorizedRedirect && typeof window !== 'undefined') {
+    if (
+      response.status === 401 &&
+      !options.suppressUnauthorizedRedirect &&
+      typeof window !== 'undefined'
+    ) {
       window.dispatchEvent(new CustomEvent('chat:unauthorized'))
     }
     throw error
@@ -97,4 +102,3 @@ export const patch = <T>(endpoint: string, data?: unknown): Promise<T> =>
   apiRequest<T>(endpoint, 'PATCH', data)
 export const del = <T>(endpoint: string, data?: unknown): Promise<T> =>
   apiRequest<T>(endpoint, 'DELETE', data)
-

@@ -4,6 +4,7 @@ import { useState, useCallback } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
+import { roomFormSchema, MAX_ROOM_NAME_LENGTH } from '../utils/room-form-schema'
 import { Loader2 } from 'lucide-react'
 import {
   Dialog,
@@ -29,26 +30,7 @@ import { useTranslation } from '@/hooks/useTranslation'
 import { calculateCharLength } from '@/lib/helpers'
 import type { CreateRoomData } from '../types'
 
-// 房间名称长度限制（按字符数计算：中文/emoji算2，数字/字母算1）
-const MIN_ROOM_NAME_LENGTH = 2 // 最少2个字符
-const MAX_ROOM_NAME_LENGTH = 20 // 最多20个字符
-
-// 创建房间表单校验 schema
-const createRoomSchema = z.object({
-  name: z
-    .string()
-    .min(1, '房间名称是必需的')
-    .refine(
-      val => calculateCharLength(val) >= MIN_ROOM_NAME_LENGTH,
-      `房间名称至少需要${MIN_ROOM_NAME_LENGTH}个字符`
-    )
-    .refine(
-      val => calculateCharLength(val) <= MAX_ROOM_NAME_LENGTH,
-      `房间名称不能超过${MAX_ROOM_NAME_LENGTH}个字符（中文/emoji算2个字符，数字/字母算1个字符）`
-    ),
-  description: z.string().max(200, '描述不能超过200个字符').optional(),
-  is_private: z.boolean(),
-})
+const createRoomSchema = roomFormSchema
 
 type CreateRoomFormData = z.infer<typeof createRoomSchema>
 

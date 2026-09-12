@@ -1,6 +1,7 @@
-import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
+import { useState, useRef, useEffect, useCallback } from 'react'
 import { toast } from '@/components/ui/use-toast'
 import { useTranslation } from '@/hooks/useTranslation'
+import useAuthStore from '@/stores/authStore'
 import useChatStore from '@/app/chat/chatStore'
 import {
   MAX_MESSAGE_LENGTH,
@@ -10,18 +11,18 @@ import {
 import { getDraftKey } from '@/app/chat/utils/message-input/utils'
 import type { MessageInputProps } from '@/app/chat/types/messageInput'
 
-function readDraft(roomId: number): string {
+function readDraft(roomId: number, userId?: number): string {
   try {
-    return window.localStorage.getItem(getDraftKey(roomId)) ?? ''
+    return window.localStorage.getItem(getDraftKey(roomId, userId)) ?? ''
   } catch {
     return ''
   }
 }
 
-function saveDraft(roomId: number, message: string) {
+function saveDraft(roomId: number, message: string, userId?: number) {
   try {
-    if (message.trim()) window.localStorage.setItem(getDraftKey(roomId), message)
-    else window.localStorage.removeItem(getDraftKey(roomId))
+    if (message.trim()) window.localStorage.setItem(getDraftKey(roomId, userId), message)
+    else window.localStorage.removeItem(getDraftKey(roomId, userId))
   } catch {
     // Drafts remain editable when browser storage is unavailable.
   }
@@ -35,6 +36,9 @@ export function useMessageInput({
   onCancelReply,
   onTypingStart,
   onTypingStop,
+  attachmentIds = [],
+  attachmentsBusy = false,
+  onAttachmentsSent,
 }: Pick<
   MessageInputProps,
   | 'roomId'
@@ -44,8 +48,12 @@ export function useMessageInput({
   | 'onCancelReply'
   | 'onTypingStart'
   | 'onTypingStop'
+  | 'attachmentIds'
+  | 'attachmentsBusy'
+  | 'onAttachmentsSent'
 >) {
   const { t } = useTranslation()
+  const userId = useAuthStore(state => state.user?.id)
   const { checkMuteStatus, muteUntil } = useChatStore()
   const [drafts, setDrafts] = useState<Record<number, string>>({})
   const [sendingRooms, setSendingRooms] = useState<number[]>([])
@@ -63,18 +71,18 @@ export function useMessageInput({
     (value: string) => {
       draftValues.current[roomId] = value
       setDrafts(previous => ({ ...previous, [roomId]: value }))
-      saveDraft(roomId, value)
+      saveDraft(roomId, value, userId)
     },
-    [roomId]
+    [roomId, userId]
   )
 
   useEffect(() => {
     activeRoom.current = roomId
-    const saved = draftValues.current[roomId] ?? readDraft(roomId)
+    const saved = draftValues.current[roomId] ?? readDraft(roomId, userId)
     draftValues.current[roomId] = saved
     setDrafts(previous => ({ ...previous, [roomId]: saved }))
     setIsEmojiPickerOpen(false)
-  }, [roomId])
+  }, [roomId, userId])
 
   const stopTyping = useCallback(() => {
     if (typingTimeoutRef.current) {
@@ -128,15 +136,14 @@ export function useMessageInput({
     [message, setMessage, roomId]
   )
 
-  const messageToSend = useMemo(() => {
-    const reply = replyingTo?.room_id == null || replyingTo.room_id === roomId ? replyingTo : null
-    const name = reply?.user.name
-    const prefix = name ? `@${/\s/.test(name) ? `"${name}"` : name} ` : ''
-    return prefix + message.trim()
-  }, [message, replyingTo, roomId])
+  const replyTarget =
+    replyingTo?.room_id == null || replyingTo.room_id === roomId ? replyingTo : null
+  const messageToSend = message.trim()
 
   const canSend =
-    Boolean(message.trim()) &&
+    (Boolean(message.trim()) || attachmentIds.length > 0) &&
+    attachmentIds.length <= 5 &&
+    !attachmentsBusy &&
     messageToSend.length <= MAX_MESSAGE_LENGTH &&
     !isSending &&
     isConnected &&
@@ -153,7 +160,8 @@ export function useMessageInput({
       )
       return
     }
-    if (!message.trim()) {
+    if (attachmentsBusy || attachmentIds.length > 5) return
+    if (!message.trim() && !attachmentIds.length) {
       toast.error(t('chat.message_cannot_be_empty', 'Message cannot be empty'))
       return
     }
@@ -175,16 +183,21 @@ export function useMessageInput({
     setSendingRooms([...pendingRooms.current])
     stopTyping()
     try {
-      const result = await sendMessage(String(roomId), messageToSend)
+      const result = attachmentIds.length
+        ? await sendMessage(String(roomId), messageToSend, replyTarget?.id, attachmentIds)
+        : replyTarget
+          ? await sendMessage(String(roomId), messageToSend, replyTarget.id)
+          : await sendMessage(String(roomId), messageToSend)
       if (!result.success) {
         toast.error(result.errorMessage ?? t('chat.failed_to_send', 'Failed to send message'))
         return
       }
+      onAttachmentsSent?.(attachmentIds)
       // A response belongs to the room/draft that initiated it, even after navigation.
       if (draftValues.current[roomId] === message) {
         draftValues.current[roomId] = ''
         setDrafts(previous => ({ ...previous, [roomId]: '' }))
-        saveDraft(roomId, '')
+        saveDraft(roomId, '', userId)
       }
       if (activeRoom.current === roomId) {
         onCancelReply?.()
@@ -200,10 +213,15 @@ export function useMessageInput({
     }
   }, [
     roomId,
+    userId,
     checkMuteStatus,
     muteUntil,
     message,
     messageToSend,
+    replyTarget,
+    attachmentIds,
+    attachmentsBusy,
+    onAttachmentsSent,
     isConnected,
     t,
     stopTyping,

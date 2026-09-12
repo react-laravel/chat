@@ -2,7 +2,8 @@
 
 'use client'
 
-import { useMemo, useCallback, useEffect, useRef } from 'react'
+import { useMemo, useCallback, useEffect, useRef, useState } from 'react'
+import { toast } from '@/components/ui/use-toast'
 import { Textarea } from '@/components/ui/textarea'
 import { useTranslation } from '@/hooks/useTranslation'
 import useChatStore from '@/app/chat/chatStore'
@@ -15,12 +16,12 @@ import {
 // 导入重构后的组件和hooks
 import { ReplyIndicator } from './message-input/ReplyIndicator'
 import { MuteStatusAlert } from './message-input/MuteStatusAlert'
-import { FilePreview } from './message-input/FilePreview'
+import { AttachmentTray } from './message-input/AttachmentTray'
+import { useRoomAttachments } from '../hooks/message-input/useRoomAttachments'
 import { MentionSuggestions } from './message-input/MentionSuggestions'
 import { ActionButtons } from './message-input/ActionButtons'
 import { useMessageInput } from '@/app/chat/hooks/message-input/useMessageInput'
 import { useMentions } from '@/app/chat/hooks/message-input/useMentions'
-import { useFileUpload } from '@/app/chat/hooks/message-input/useFileUpload'
 import { useMessageInputHandlers } from '@/app/chat/hooks/message-input/useMessageInputHandlers'
 import { MAX_MESSAGE_LENGTH } from '@/app/chat/utils/message-input/constants'
 import type { MessageInputProps } from '@/app/chat/types/messageInput'
@@ -31,6 +32,7 @@ const EMPTY_USERS: OnlineUser[] = []
 
 export function MessageInput({
   roomId,
+  mentionRequest,
   replyingTo,
   onCancelReply,
   className = '',
@@ -53,6 +55,8 @@ export function MessageInput({
     useCallback(state => state.onlineUsers[roomId.toString()] ?? EMPTY_USERS, [roomId])
   )
   const inputContainerRef = useRef<HTMLDivElement>(null)
+  const attachments = useRoomAttachments(roomId)
+  const [dragging, setDragging] = useState(false)
 
   // 使用自定义hooks管理状态和逻辑
   const {
@@ -76,7 +80,28 @@ export function MessageInput({
     onCancelReply,
     onTypingStart,
     onTypingStop,
+    attachmentIds: attachments.files.map(file => file.id),
+    attachmentsBusy: attachments.busy,
+    onAttachmentsSent: ids => {
+      void attachments.sent(ids)
+    },
   })
+
+  const appliedMention = useRef<number | null>(null)
+  useEffect(() => {
+    if (
+      !mentionRequest ||
+      mentionRequest.roomId !== roomId ||
+      appliedMention.current === mentionRequest.id
+    )
+      return
+    appliedMention.current = mentionRequest.id
+    const name = /\s/.test(mentionRequest.name) ? `"${mentionRequest.name}"` : mentionRequest.name
+    const next = `${message}${message && !/\s$/.test(message) ? ' ' : ''}@${name} `
+    if (next.length > MAX_MESSAGE_LENGTH) return
+    setMessage(next)
+    textareaRef.current?.focus()
+  }, [mentionRequest, roomId, message, setMessage, textareaRef])
 
   // 使用提及功能hook
   const {
@@ -88,9 +113,6 @@ export function MessageInput({
     handleMentionNavigation,
   } = useMentions(roomUsers)
 
-  // 使用文件上传hook
-  const { uploadedFiles, handleFileUpload, removeFile } = useFileUpload()
-
   // 未读消息逻辑
   const { isAtBottom } = useScrollPosition(scrollContainerRef || { current: null })
   const unreadCount = useUnreadMessages(roomMessages, isAtBottom, undefined, roomId)
@@ -100,37 +122,31 @@ export function MessageInput({
     fileInputRef.current?.click()
   }, [fileInputRef])
 
-  const {
-    handleFileInputChange,
-    handleTextareaChange,
-    handleMentionSelect,
-    handleKeyDown,
-    scrollToBottom,
-  } = useMessageInputHandlers({
-    roomId,
-    message,
-    handleInputChange,
-    setMessage,
-    replyTarget: (replyingTo ?? null) as ChatMessage | null,
-    onCancelReply,
-    mentionSuggestions,
-    selectedMentionIndex,
-    showMentions,
-    checkForMentions,
-    insertMention,
-    handleMentionNavigation,
-    handleSendMessage,
-    sendMessage,
-    isConnected,
-    checkMuteStatus,
-    muteUntil,
-    t,
-    fileInputRef,
-    textareaRef,
-    scrollContainerRef,
-    handleFileUpload,
-    inputContainerRef,
-  })
+  const { handleTextareaChange, handleMentionSelect, handleKeyDown, scrollToBottom } =
+    useMessageInputHandlers({
+      roomId,
+      message,
+      handleInputChange,
+      setMessage,
+      replyTarget: (replyingTo ?? null) as ChatMessage | null,
+      onCancelReply,
+      mentionSuggestions,
+      selectedMentionIndex,
+      showMentions,
+      checkForMentions,
+      insertMention,
+      handleMentionNavigation,
+      handleSendMessage,
+      sendMessage,
+      isConnected,
+      checkMuteStatus,
+      muteUntil,
+      t,
+      fileInputRef,
+      textareaRef,
+      scrollContainerRef,
+      inputContainerRef,
+    })
 
   useEffect(() => {
     refreshMuteStatus()
@@ -139,8 +155,28 @@ export function MessageInput({
   return (
     <div
       ref={inputContainerRef}
+      onDragOver={event => {
+        if (event.dataTransfer.types.includes('Files')) {
+          event.preventDefault()
+          setDragging(true)
+        }
+      }}
+      onDragLeave={event => {
+        if (!event.currentTarget.contains(event.relatedTarget as Node)) setDragging(false)
+      }}
+      onDrop={event => {
+        event.preventDefault()
+        setDragging(false)
+        if (isConnected && !checkMuteStatus())
+          void attachments.add(Array.from(event.dataTransfer.files))
+      }}
       className={`bg-background relative border-t px-3 py-3 sm:px-5 sm:py-4 ${className}`}
     >
+      {dragging && (
+        <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center rounded-xl border-2 border-dashed border-primary bg-background/95 text-sm text-primary">
+          拖到这里上传附件
+        </div>
+      )}
       {/* 静音状态提示 */}
       {checkMuteStatus() && <MuteStatusAlert muteUntil={muteUntil} muteReason={muteReason} />}
 
@@ -150,7 +186,10 @@ export function MessageInput({
       )}
 
       {/* 已上传文件预览 */}
-      <FilePreview files={uploadedFiles} onRemove={removeFile} />
+      <AttachmentTray attachments={attachments} />
+      {(attachments.files.length > 0 || attachments.uploads.length > 0) && (
+        <p className="mb-2 text-[11px] text-muted-foreground">每条最多5个附件，每个不超过10 MB</p>
+      )}
 
       <div className="relative flex items-end gap-2 rounded-xl border bg-muted/20 p-2 focus-within:border-primary/60 focus-within:ring-2 focus-within:ring-primary/10">
         <div className="relative min-w-0 flex-1">
@@ -159,6 +198,14 @@ export function MessageInput({
             value={message}
             onChange={handleTextareaChange}
             onKeyDown={handleKeyDown}
+            onPaste={event => {
+              if (event.clipboardData.files.length) {
+                event.preventDefault()
+                if (isConnected && !checkMuteStatus())
+                  void attachments.add(Array.from(event.clipboardData.files))
+                else toast.error('当前暂时不能上传附件')
+              }
+            }}
             placeholder={
               replyingTo
                 ? t('chat.reply_to', 'Reply to {name}...').replace('{name}', replyingTo.user.name)
@@ -183,10 +230,11 @@ export function MessageInput({
 
         {/* 操作按钮 */}
         <ActionButtons
+          onFileUpload={handleFileUploadClick}
           onSend={handleSendMessage}
           canSend={canSend}
           isSending={isSending}
-          isConnected={isConnected}
+          isConnected={isConnected && !checkMuteStatus()}
           isEmojiPickerOpen={isEmojiPickerOpen}
           onEmojiPickerChange={setIsEmojiPickerOpen}
           onEmojiSelect={insertEmoji}
@@ -214,8 +262,12 @@ export function MessageInput({
         ref={fileInputRef}
         type="file"
         multiple
-        accept="image/*,.pdf,.doc,.docx,.txt"
-        onChange={handleFileInputChange}
+        accept=".jpg,.jpeg,.png,.webp,.gif,.pdf,.txt,.doc,.docx,.xls,.xlsx,.zip"
+        onChange={event => {
+          const files = Array.from(event.target.files ?? [])
+          event.target.value = ''
+          void attachments.add(files)
+        }}
         data-testid="file-input"
         className="hidden"
         aria-label={t('chat.file_input', 'File input')}

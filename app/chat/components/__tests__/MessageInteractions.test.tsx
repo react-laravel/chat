@@ -45,7 +45,7 @@ describe('MessageInteractions', () => {
 
   it('does not render reactions area when no reactions', () => {
     const { container } = render(<MessageInteractions message={mockMessage} />)
-    expect(container.textContent).not.toContain('👍')
+    expect(container.querySelector('[aria-pressed]')).toBeNull()
   })
 
   it('calls onReact when reaction is clicked', async () => {

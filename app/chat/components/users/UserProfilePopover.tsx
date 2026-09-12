@@ -100,26 +100,39 @@ export function UserProfilePopover({
           {/* 操作按钮 */}
           <div className="space-y-2">
             <div className="flex space-x-2">
-              <Button variant="outline" size="sm" className="flex-1" onClick={handleDirectMessage}>
-                <MessageCircle className="mr-2 h-4 w-4" />
-                Message
-              </Button>
-              <Button variant="outline" size="sm" className="flex-1" onClick={handleMentionUser}>
-                <AtSign className="mr-2 h-4 w-4" />
-                Mention
-              </Button>
+              {onDirectMessage && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="flex-1"
+                  onClick={handleDirectMessage}
+                >
+                  <MessageCircle className="mr-2 h-4 w-4" />
+                  Message
+                </Button>
+              )}
+              {onMentionUser && (
+                <Button variant="outline" size="sm" className="flex-1" onClick={handleMentionUser}>
+                  <AtSign className="mr-2 h-4 w-4" />
+                  提及
+                </Button>
+              )}
             </div>
 
             {/* 其他操作 */}
             <div className="flex space-x-2">
-              <Button variant="outline" size="sm" className="flex-1" onClick={handleBlockUser}>
-                <UserX className="mr-2 h-4 w-4" />
-                Block
-              </Button>
-              <Button variant="outline" size="sm" className="flex-1" onClick={handleReportUser}>
-                <Flag className="mr-2 h-4 w-4" />
-                Report
-              </Button>
+              {onBlockUser && (
+                <Button variant="outline" size="sm" className="flex-1" onClick={handleBlockUser}>
+                  <UserX className="mr-2 h-4 w-4" />
+                  Block
+                </Button>
+              )}
+              {onReportUser && (
+                <Button variant="outline" size="sm" className="flex-1" onClick={handleReportUser}>
+                  <Flag className="mr-2 h-4 w-4" />
+                  Report
+                </Button>
+              )}
             </div>
           </div>
         </div>

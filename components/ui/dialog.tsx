@@ -7,7 +7,7 @@ import { X } from 'lucide-react'
 import { cn } from '@/lib/helpers'
 
 const DialogDescriptionContext = React.createContext<{
-  registerDescription: () => void
+  registerDescription: () => () => void
 } | null>(null)
 
 function DialogDescriptionFallback({
@@ -39,7 +39,7 @@ const DialogOverlay = React.forwardRef<
   <DialogPrimitive.Overlay
     ref={ref}
     className={cn(
-      'data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 fixed inset-0 z-[130] bg-black/80',
+      'data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 fixed inset-0 z-[130] bg-black/35 backdrop-blur-[2px]',
       className
     )}
     {...props}
@@ -51,19 +51,21 @@ const DialogContent = React.forwardRef<
   React.ElementRef<typeof DialogPrimitive.Content>,
   React.ComponentPropsWithoutRef<typeof DialogPrimitive.Content>
 >(({ className, children, ...props }, ref) => {
-  const [hasDescription, setHasDescription] = React.useState(false)
+  const [descriptionCount, setDescriptionCount] = React.useState(0)
   const registerDescription = React.useCallback(() => {
-    setHasDescription(true)
+    setDescriptionCount(count => count + 1)
+    return () => setDescriptionCount(count => Math.max(0, count - 1))
   }, [])
   const hasExplicitAriaDescribedBy = 'aria-describedby' in props
 
   return (
     <DialogDescriptionContext.Provider value={{ registerDescription }}>
       <DialogPortal>
+        <DialogOverlay />
         <DialogPrimitive.Content
           ref={ref}
           className={cn(
-            'bg-background data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 data-[state=closed]:slide-out-to-left-1/2 data-[state=closed]:slide-out-to-top-[48%] data-[state=open]:slide-in-from-left-1/2 data-[state=open]:slide-in-from-top-[48%] fixed top-[50%] left-[50%] z-[130] grid w-full max-w-lg translate-x-[-50%] translate-y-[-50%] gap-4 border p-6 shadow-lg duration-200 sm:rounded-lg',
+            'bg-background data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 data-[state=closed]:slide-out-to-left-1/2 data-[state=closed]:slide-out-to-top-[48%] data-[state=open]:slide-in-from-left-1/2 data-[state=open]:slide-in-from-top-[48%] fixed top-[50%] left-[50%] z-[130] grid w-[calc(100%-2rem)] max-w-lg max-h-[calc(100dvh-2rem)] overflow-y-auto translate-x-[-50%] translate-y-[-50%] gap-4 border p-6 shadow-lg duration-200 sm:rounded-lg',
             className
           )}
           {...props}
@@ -71,7 +73,7 @@ const DialogContent = React.forwardRef<
           {children}
           <DialogDescriptionFallback
             hasExplicitAriaDescribedBy={hasExplicitAriaDescribedBy}
-            hasDescription={hasDescription}
+            hasDescription={descriptionCount > 0}
           />
           <DialogPrimitive.Close className="ring-offset-background focus:ring-ring data-[state=open]:bg-accent data-[state=open]:text-muted-foreground absolute top-4 right-4 rounded-sm opacity-70 transition-opacity hover:opacity-100 focus:ring-2 focus:ring-offset-2 focus:outline-none disabled:pointer-events-none">
             <X className="h-4 w-4" />
@@ -113,8 +115,8 @@ const DialogDescription = React.forwardRef<
   React.ElementRef<typeof DialogPrimitive.Description>,
   React.ComponentPropsWithoutRef<typeof DialogPrimitive.Description>
 >(({ className, ...props }, ref) => {
-  const descriptionContext = React.useContext(DialogDescriptionContext)
-  descriptionContext?.registerDescription()
+  const registerDescription = React.useContext(DialogDescriptionContext)?.registerDescription
+  React.useLayoutEffect(() => registerDescription?.(), [registerDescription])
 
   return (
     <DialogPrimitive.Description

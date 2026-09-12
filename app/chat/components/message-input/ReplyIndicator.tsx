@@ -12,7 +12,7 @@ export function ReplyIndicator({ replyingTo, onCancel }: ReplyIndicatorProps) {
   return (
     <div className="bg-muted/50 mb-3 flex items-center justify-between rounded-md p-2 sm:p-3">
       <div className="min-w-0 flex-1 text-sm">
-        <span className="text-muted-foreground">Replying to </span>
+        <span className="text-muted-foreground">{t('chat.replying_to', '回复给')} </span>
         <span className="font-medium">{replyingTo.user.name}</span>
         <span className="text-muted-foreground">: </span>
         <span className="text-muted-foreground block truncate">

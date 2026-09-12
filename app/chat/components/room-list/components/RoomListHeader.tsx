@@ -31,7 +31,7 @@ export const RoomListHeader = memo<RoomListHeaderProps>(
 
         {/* 搜索框和新建按钮 */}
         <div className="flex items-center gap-2">
-          <div className="relative flex-1">
+          <div className="relative min-w-0 flex-1">
             <Search className="text-muted-foreground absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 transform" />
             <Input
               placeholder={t('chat.search_rooms', 'Search rooms...')}
@@ -41,17 +41,21 @@ export const RoomListHeader = memo<RoomListHeaderProps>(
             />
           </div>
           {!showHeader && (
-            <Button size="sm" onClick={onCreateRoom} className="h-9">
-              <Plus className="mr-1 h-4 w-4" />
-              {t('chat.create_room', '创建房间')}
+            <Button
+              size="sm"
+              onClick={onCreateRoom}
+              className="h-9 w-9 shrink-0 p-0"
+              aria-label={t('chat.create_room', '创建房间')}
+            >
+              <Plus className="h-4 w-4" />
             </Button>
           )}
         </div>
 
         {/* 筛选按钮 */}
-        <div className="flex gap-1">
+        <div className="flex gap-1 rounded-lg bg-muted/50 p-1">
           <Button
-            variant={filterType === 'all' ? 'default' : 'ghost'}
+            variant={filterType === 'all' ? 'secondary' : 'ghost'}
             size="sm"
             onClick={() => onFilterChange('all')}
             className="h-8"
@@ -59,7 +63,7 @@ export const RoomListHeader = memo<RoomListHeaderProps>(
             {t('chat.all_rooms', 'All')}
           </Button>
           <Button
-            variant={filterType === 'favorites' ? 'default' : 'ghost'}
+            variant={filterType === 'favorites' ? 'secondary' : 'ghost'}
             size="sm"
             onClick={() => onFilterChange('favorites')}
             className="h-8"
@@ -68,7 +72,7 @@ export const RoomListHeader = memo<RoomListHeaderProps>(
             {t('chat.favorites', 'Favorites')}
           </Button>
           <Button
-            variant={filterType === 'recent' ? 'default' : 'ghost'}
+            variant={filterType === 'recent' ? 'secondary' : 'ghost'}
             size="sm"
             onClick={() => onFilterChange('recent')}
             className="h-8"
