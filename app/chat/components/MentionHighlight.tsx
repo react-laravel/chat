@@ -30,7 +30,7 @@ export function MentionHighlight({ text, className, onMentionClick }: MentionHig
     if (!text) return [{ type: 'text', content: '' }]
 
     // Regex to match @username or @"display name" patterns
-    const mentionRegex = /@(?:"([^"]+)"|(\w+))/g
+    const mentionRegex = /@(?:"([^"]+)"|([\p{L}\p{N}_.-]+))/gu
     const parts: MentionMatch[] = []
     let lastIndex = 0
     let match: RegExpExecArray | null
@@ -123,7 +123,7 @@ export function useMentionDetection(text: string) {
       }
     }
 
-    const mentionRegex = /@(?:"([^"]+)"|(\w+))/g
+    const mentionRegex = /@(?:"([^"]+)"|([\p{L}\p{N}_.-]+))/gu
     const mentions: string[] = []
     let match: RegExpExecArray | null
     let hasCurrentUserMention = false
@@ -150,7 +150,7 @@ export function useMentionDetection(text: string) {
 export function extractMentions(text: string): string[] {
   if (!text) return []
 
-  const mentionRegex = /@(?:"([^"]+)"|(\w+))/g
+  const mentionRegex = /@(?:"([^"]+)"|([\p{L}\p{N}_.-]+))/gu
   const mentions: string[] = []
   let match: RegExpExecArray | null
 
@@ -170,7 +170,7 @@ export function extractMentions(text: string): string[] {
 export function containsMention(text: string, username: string): boolean {
   if (!text || !username) return false
 
-  const mentionRegex = /@(?:"([^"]+)"|(\w+))/g
+  const mentionRegex = /@(?:"([^"]+)"|([\p{L}\p{N}_.-]+))/gu
   let match: RegExpExecArray | null
   const usernameLower = username.toLowerCase()
 

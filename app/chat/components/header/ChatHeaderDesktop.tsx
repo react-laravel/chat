@@ -28,7 +28,7 @@ export const ChatHeaderDesktop = memo<ChatHeaderDesktopProps>(
     const { t } = useTranslation()
 
     return (
-      <div className="bg-background hidden items-center justify-between border-b px-4 py-2 md:flex">
+      <div className="bg-background hidden items-center justify-between min-h-16 min-w-0 gap-3 border-b px-5 py-3 lg:flex">
         {/* 左侧 - 导航和房间信息 */}
         <div className="flex items-center gap-3">
           {showBackButton && (
@@ -40,19 +40,21 @@ export const ChatHeaderDesktop = memo<ChatHeaderDesktopProps>(
         </div>
 
         {/* 中间 - 房间详情 */}
-        <div className="flex flex-1 justify-center">
-          <div className="text-center">
-            <div className="flex items-center justify-center gap-3">
+        <div className="flex min-w-0 flex-1">
+          <div className="min-w-0">
+            <div className="flex min-w-0 items-center gap-3">
               <Hash className="text-muted-foreground h-4 w-4" />
-              <h1 className="font-semibold">{room.name}</h1>
+              <h1 className="truncate font-semibold">{room.name}</h1>
               <div className="flex items-center gap-1 text-xs">
                 <div
-                  className={`h-2 w-2 rounded-full ${isConnected ? 'bg-green-500' : 'bg-red-500'}`}
+                  className={`h-2 w-2 rounded-full ${isConnected ? 'bg-green-500' : connectionStatus === 'connecting' ? 'animate-pulse bg-amber-500' : 'bg-red-500'}`}
                 />
                 <span className="text-muted-foreground">
                   {connectionStatus === 'connected'
                     ? t('chat.connected', '已连接')
-                    : t('chat.disconnected', '已断开')}
+                    : connectionStatus === 'connecting'
+                      ? t('chat.connecting', '连接中…')
+                      : t('chat.disconnected', '已断开')}
                 </span>
               </div>
             </div>

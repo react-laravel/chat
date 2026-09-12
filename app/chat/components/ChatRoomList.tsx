@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useRef } from 'react'
 import { useFormModal } from '@/hooks/useFormModal'
 import { Skeleton } from '@/components/ui/skeleton'
 import useChatStore from '@/app/chat/chatStore'
@@ -31,6 +31,9 @@ export function ChatRoomList({ onRoomSelect, showHeader = true }: ChatRoomListPr
     loadRooms,
   } = useChatStore()
 
+  const selectionRequest = useRef(0)
+  const [joiningRoomId, setJoiningRoomId] = useState<number | null>(null)
+
   const createModal = useFormModal<null>('create')
   const editModal = useFormModal<number>('edit')
   const deleteModal = useFormModal<number>('delete')
@@ -50,21 +53,26 @@ export function ChatRoomList({ onRoomSelect, showHeader = true }: ChatRoomListPr
   // 选择房间
   const handleRoomSelect = useCallback(
     async (room: ChatRoom) => {
+      const requestId = ++selectionRequest.current
       if (currentRoom?.id === room.id) {
+        setJoiningRoomId(null)
         onRoomSelect?.()
         return
       }
 
+      setJoiningRoomId(room.id)
       try {
         console.log('ChatRoomList: Selecting room:', room)
 
         await joinRoom(room.id)
+        if (requestId !== selectionRequest.current) return
         setCurrentRoom(room)
         addRecentRoom(room.id)
+        onRoomSelect?.()
       } catch (error) {
         console.error('Failed to join room:', error)
       } finally {
-        onRoomSelect?.()
+        if (requestId === selectionRequest.current) setJoiningRoomId(null)
       }
     },
     [currentRoom, setCurrentRoom, joinRoom, addRecentRoom, onRoomSelect]
@@ -108,7 +116,7 @@ export function ChatRoomList({ onRoomSelect, showHeader = true }: ChatRoomListPr
     loadRooms()
   }, [loadRooms])
 
-  if (error) {
+  if (error && rooms.length === 0) {
     return <RoomListError error={error} onRetry={loadRooms} />
   }
 
@@ -143,6 +151,7 @@ export function ChatRoomList({ onRoomSelect, showHeader = true }: ChatRoomListPr
                 key={room.id}
                 room={room}
                 isActive={currentRoom?.id === room.id}
+                isJoining={joiningRoomId === room.id}
                 isFavorite={favoriteRooms.has(room.id)}
                 onSelect={handleRoomSelect}
                 onToggleFavorite={handleToggleFavorite}

@@ -1,6 +1,7 @@
 export interface MessageInputProps {
   roomId: number
   replyingTo?: {
+    room_id?: number
     id: number
     user: { name: string }
     message: string

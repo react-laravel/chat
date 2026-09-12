@@ -41,24 +41,26 @@ interface WebSocketConfig {
  * 获取 WebSocket 配置 - 提取配置逻辑减少 createEchoInstance 复杂度
  */
 function getWebSocketConfig(): WebSocketConfig {
-  const scheme = process.env.NEXT_PUBLIC_REVERB_SCHEME || 'https'
+  const isLocal =
+    typeof window !== 'undefined' && ['localhost', '127.0.0.1'].includes(window.location.hostname)
+  const scheme = process.env.NEXT_PUBLIC_REVERB_SCHEME || (isLocal ? 'http' : 'https')
   const isHttps = scheme === 'https'
   const port = process.env.NEXT_PUBLIC_REVERB_PORT
     ? parseInt(process.env.NEXT_PUBLIC_REVERB_PORT)
     : isHttps
       ? 443
-      : 8080
+      : 8083
 
   const wsHost = (() => {
     if (process.env.NEXT_PUBLIC_REVERB_HOST) {
       return process.env.NEXT_PUBLIC_REVERB_HOST
     }
     if (typeof window !== 'undefined') {
-      return window.location.host
+      return window.location.hostname
     }
     const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
     try {
-      return new URL(apiUrl).host
+      return new URL(apiUrl).hostname
     } catch {
       return 'localhost'
     }

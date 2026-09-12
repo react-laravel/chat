@@ -152,20 +152,6 @@ export const useChatWebSocket = (options: UseChatWebSocketOptions = {}): UseChat
     [onMessage]
   )
 
-  useEffect(() => {
-    if (autoConnect) {
-      const authManager = getAuthManager()
-      const token = authManager.getToken()
-      if (token) {
-        const echoInstance = createEchoInstance()
-        if (echoInstance) {
-          ensureRoomListSubscription(echoInstance)
-        }
-        setEcho(echoInstance)
-      }
-    }
-  }, [autoConnect, ensureRoomListSubscription])
-
   // 组件挂载和卸载管理
   useEffect(() => {
     isComponentMountedRef.current = true
@@ -243,6 +229,12 @@ export const useChatWebSocket = (options: UseChatWebSocketOptions = {}): UseChat
       return false
     }
   }, [authTokenRefreshCallback, ensureRoomListSubscription, onError, echo])
+
+  useEffect(() => {
+    // Echo is an external system; connecting synchronizes its state with React.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (autoConnect) void connect()
+  }, [autoConnect, connect])
 
   const disconnect = useCallback(async () => {
     if (!isComponentMountedRef.current) {
@@ -364,17 +356,9 @@ export const useChatWebSocket = (options: UseChatWebSocketOptions = {}): UseChat
         return { success: true }
       }
 
-      if (result.error) {
-        const errorText = result.error.message.toLowerCase()
-        if (!errorText.includes('mute')) {
-          offlineManagerRef.current?.queueMessage(roomId, message)
-        }
-        onError?.(result.error)
-      }
-
       return { success: false, errorMessage: result.error?.message }
     },
-    [echo, offlineState.isOffline, connectionInfo.status, onError, onMessageSentSuccess]
+    [echo, offlineState.isOffline, connectionInfo.status, onMessageSentSuccess]
   )
 
   const reconnect = useCallback(() => {

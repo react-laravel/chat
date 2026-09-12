@@ -127,7 +127,7 @@ describe('ChatRoomList', () => {
 
     await waitFor(() => {
       expect(joinRoomMock).toHaveBeenCalledWith(1)
-      expect(onRoomSelect).toHaveBeenCalledTimes(1)
+      expect(onRoomSelect).not.toHaveBeenCalled()
     })
 
     expect(setCurrentRoomMock).not.toHaveBeenCalled()
@@ -137,6 +137,7 @@ describe('ChatRoomList', () => {
   it('renders error state and retries loading', async () => {
     const user = userEvent.setup()
     mockStore.error = new Error('load failed')
+    mockStore.rooms = []
     const view = render(<ChatRoomList />)
 
     expect(view.getByText('Error loading rooms')).toBeInTheDocument()

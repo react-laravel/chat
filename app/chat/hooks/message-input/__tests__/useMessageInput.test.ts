@@ -166,52 +166,53 @@ describe('useMessageInput idempotency', () => {
     vi.useRealTimers()
   })
 
-  it('should block duplicate unacknowledged sends within the idempotency window', async () => {
-    const sendMessage = vi.fn(async () => ({ success: false as const, errorMessage: 'failed' }))
-
+  it('allows an immediate retry after a rejected send', async () => {
+    const sendMessage = vi.fn(async () => ({ success: false as const }))
     const { result } = renderHook(() =>
-      useMessageInput({
-        roomId: 1,
-        sendMessage,
-        isConnected: true,
-        replyingTo: undefined,
-        onCancelReply: undefined,
-      })
+      useMessageInput({ roomId: 1, sendMessage, isConnected: true })
     )
-
-    // Set a message
-    act(() => {
-      result.current.handleInputChange('Test message')
-    })
-
-    // Send the message
+    act(() => result.current.handleInputChange('Retry me'))
     await act(async () => {
       await result.current.handleSendMessage()
     })
-
-    // Should have called sendMessage once
-    expect(sendMessage).toHaveBeenCalledTimes(1)
-
-    // Try to send the same message again while the previous attempt is still unacknowledged
+    expect(result.current.message).toBe('Retry me')
     await act(async () => {
       await result.current.handleSendMessage()
     })
-
-    // Should NOT call sendMessage again due to idempotency
-    expect(sendMessage).toHaveBeenCalledTimes(1)
-
-    // Advance time past the idempotency window
-    act(() => {
-      vi.advanceTimersByTime(6000) // 5 seconds + buffer
-    })
-
-    // Try sending again after window expires
-    await act(async () => {
-      await result.current.handleSendMessage()
-    })
-
-    // Should allow the send now
     expect(sendMessage).toHaveBeenCalledTimes(2)
+  })
+
+  it('locks concurrent submits and does not clear the next room draft on completion', async () => {
+    let resolve!: (result: { success: true }) => void
+    const sendMessage = vi.fn(
+      () =>
+        new Promise<{ success: true }>(done => {
+          resolve = done
+        })
+    )
+    const cancelReply = vi.fn()
+    const { result, rerender } = renderHook(
+      ({ roomId }) =>
+        useMessageInput({ roomId, sendMessage, isConnected: true, onCancelReply: cancelReply }),
+      { initialProps: { roomId: 1 } }
+    )
+    act(() => result.current.handleInputChange('Room one'))
+    let pending!: Promise<void>
+    act(() => {
+      pending = result.current.handleSendMessage()
+      void result.current.handleSendMessage()
+    })
+    expect(sendMessage).toHaveBeenCalledTimes(1)
+    act(() => rerender({ roomId: 2 }))
+    act(() => result.current.handleInputChange('Room two'))
+    await act(async () => {
+      resolve({ success: true })
+      await pending
+    })
+    expect(result.current.message).toBe('Room two')
+    expect(cancelReply).not.toHaveBeenCalled()
+    act(() => rerender({ roomId: 1 }))
+    expect(result.current.message).toBe('')
   })
 
   it('should allow different messages to be sent', async () => {

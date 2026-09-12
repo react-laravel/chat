@@ -14,11 +14,11 @@ const Avatar = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLDivElem
 Avatar.displayName = 'Avatar'
 
 const AvatarImage = React.forwardRef<HTMLImageElement, React.ImgHTMLAttributes<HTMLImageElement>>(
-  ({ className, alt = '', src, width, height, ...props }, ref) => {
-    const [imageError, setImageError] = React.useState(false)
+  ({ className, alt = '', src, width, height, onError, onLoad, ...props }, ref) => {
+    const [failedSrc, setFailedSrc] = React.useState<string | null>(null)
 
     // 确保 src 存在，否则不渲染 Image 组件
-    if (!src || imageError) {
+    if (!src || failedSrc === src) {
       return null
     }
 
@@ -31,17 +31,16 @@ const AvatarImage = React.forwardRef<HTMLImageElement, React.ImgHTMLAttributes<H
     return (
       <Image
         ref={ref}
-        className={cn('aspect-square h-full w-full', className)}
+        className={cn('absolute inset-0 z-10 aspect-square h-full w-full object-cover', className)}
         alt={alt}
         src={srcString}
-        width={typeof width === 'number' ? width : undefined}
-        height={typeof height === 'number' ? height : undefined}
-        onLoad={() => {
-          console.log('Avatar image loaded:', src)
-        }}
-        onError={e => {
-          console.error('Avatar image failed to load:', src, e)
-          setImageError(true)
+        unoptimized
+        width={Number(width) || 40}
+        height={Number(height) || 40}
+        onLoad={onLoad}
+        onError={event => {
+          setFailedSrc(srcString)
+          onError?.(event)
         }}
         {...props}
       />

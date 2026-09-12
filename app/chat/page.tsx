@@ -4,6 +4,7 @@
 
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
+import { Button } from '@/components/ui/button'
 import {
   MessageList,
   MessageInput,
@@ -29,8 +30,6 @@ const noop = () => {}
 
 // 节流时间常量
 const LOAD_THROTTLE_TIME = 5000
-const CONNECTION_CHECK_INTERVAL = 100
-const CONNECTION_TIMEOUT = 10000
 
 function ChatPageContent() {
   const router = useRouter()
@@ -66,11 +65,13 @@ function ChatPageContent() {
   // Refs 优化
   const hasLoadedInitialDataRef = useRef(false)
   const scrollContainerRef = useRef<HTMLDivElement>(null)
-  const lastLoadedRoomRef = useRef<number | null>(null)
   const loadThrottleTimersRef = useRef<Record<string, number>>({})
 
   // 移动端状态
   const { isRoomListOpen, isUsersListOpen, setRoomListOpen, setUsersListOpen } = useChatUIStore()
+  const [joinedRoomId, setJoinedRoomId] = useState<number | null>(null)
+  const [joinAttempt, setJoinAttempt] = useState(0)
+  const [joinFailure, setJoinFailure] = useState<{ roomId: number; message: string } | null>(null)
   const [replyingTo, setReplyingTo] = useState<ChatMessage | null>(null)
 
   // 错误处理
@@ -104,11 +105,13 @@ function ChatPageContent() {
 
       handleDisconnect: () => {
         setConnectionStatus('disconnected')
+        setJoinedRoomId(null)
         clearAllOnlineUsers()
       },
 
       handleWebSocketError: () => {
         setConnectionStatus('disconnected')
+        setJoinedRoomId(null)
         clearAllOnlineUsers()
       },
 
@@ -155,8 +158,9 @@ function ChatPageContent() {
 
           case 'user_joined':
           case 'user_left': {
-            if (currentRoom) {
-              loadOnlineUsersThrottled(currentRoom.id).catch(noop)
+            const activeRoom = useChatStore.getState().currentRoom
+            if (activeRoom) {
+              loadOnlineUsersThrottled(activeRoom.id).catch(noop)
             }
             break
           }
@@ -173,7 +177,6 @@ function ChatPageContent() {
       updateMuteStatus,
       updateRoomOnlineCount,
       addMessage,
-      currentRoom,
       loadOnlineUsersThrottled,
     ]
   )
@@ -184,22 +187,23 @@ function ChatPageContent() {
       handleOpenRoomList: () => setRoomListOpen(true),
       handleOpenUsersList: () => setUsersListOpen(true),
       handleReply: (message: ChatMessage) => setReplyingTo(message),
-      cancelReply: () => setReplyingTo(null),
+      cancelReply: () =>
+        setReplyingTo(reply => (reply?.room_id === currentRoom?.id ? null : reply)),
     }),
-    [setRoomListOpen, setUsersListOpen]
+    [setRoomListOpen, setUsersListOpen, currentRoom?.id]
   )
 
   // 消息发送成功处理
   const handleMessageSentSuccess = useCallback(
     (messageData: unknown) => {
       const normalizedMessage = normalizeIncomingMessage(messageData)
-      if (currentRoom && normalizedMessage) {
-        addMessage(currentRoom.id, normalizedMessage)
+      if (normalizedMessage) {
+        addMessage(normalizedMessage.room_id, normalizedMessage)
       } else {
         console.warn('ChatPage: ignored malformed sendMessage response payload', messageData)
       }
     },
-    [currentRoom, addMessage]
+    [addMessage]
   )
 
   // 认证令牌刷新回调
@@ -283,57 +287,44 @@ function ChatPageContent() {
     initializeChat()
   }, [isAuthenticated, authLoading, connect, loadRooms, handleError, clearAllOnlineUsers])
 
-  // 房间切换处理 - 优化连接状态检查
+  // Restore server presence before enabling sends, including after a reconnect.
   useEffect(() => {
-    if (!currentRoom || !isAuthenticated) return
-
-    const currentRoomExists = rooms.some(room => room.id === currentRoom.id)
-    if (!currentRoomExists) {
-      return
-    }
-
-    // 加载在线用户 - 避免重复请求
-    if (lastLoadedRoomRef.current !== currentRoom.id) {
-      lastLoadedRoomRef.current = currentRoom.id
-      loadOnlineUsersThrottled(currentRoom.id).catch(handleError)
-    }
-
-    // 加入WebSocket房间的统一处理函数
-    const joinRoom = () => wsJoinRoom(currentRoom.id.toString())
-
-    // 如果已连接，直接加入房间
-    if (connectionInfo.status === 'connected') {
-      joinRoom()
-      return
-    }
-
-    // 如果正在连接，等待连接建立
-    if (connectionInfo.status === 'connecting') {
-      const checkInterval = setInterval(() => {
-        const currentStatus = useChatStore.getState().connectionStatus
-        if (currentStatus === 'connected') {
-          clearInterval(checkInterval)
-          joinRoom()
+    const roomId = currentRoom?.id
+    if (!roomId || !isAuthenticated || connectionInfo.status !== 'connected') return
+    let cancelled = false
+    const enterRoom = async () => {
+      try {
+        await useChatStore.getState().joinRoom(roomId)
+        if (cancelled) return
+        await wsJoinRoom(String(roomId))
+        if (cancelled) return
+        setJoinedRoomId(roomId)
+        setJoinFailure(null)
+        await Promise.all([
+          useChatStore.getState().loadMessages(roomId),
+          useChatStore.getState().loadOnlineUsers(roomId),
+        ])
+      } catch (error) {
+        if (!cancelled) {
+          setJoinFailure({
+            roomId,
+            message: error instanceof Error ? error.message : '加入房间失败',
+          })
+          handleError(error as Error)
         }
-      }, CONNECTION_CHECK_INTERVAL)
-
-      const timeout = setTimeout(() => {
-        clearInterval(checkInterval)
-      }, CONNECTION_TIMEOUT)
-
-      return () => {
-        clearInterval(checkInterval)
-        clearTimeout(timeout)
       }
     }
+    void enterRoom()
+    return () => {
+      cancelled = true
+    }
   }, [
-    currentRoom,
-    rooms,
+    currentRoom?.id,
+    joinAttempt,
     isAuthenticated,
     connectionInfo.status,
     wsJoinRoom,
     handleError,
-    loadOnlineUsersThrottled,
   ])
 
   // 渲染逻辑优化
@@ -363,7 +354,7 @@ function ChatPageContent() {
           />
 
           {/* Main Chat Area */}
-          <div className="flex min-h-0 flex-1 flex-col">
+          <div className="flex min-h-0 min-w-0 flex-1 flex-col">
             {/* Mobile Sheets - 房间列表和用户列表（无房间时也可打开房间列表） */}
             <MobileSheets
               isRoomListOpen={isRoomListOpen}
@@ -400,14 +391,35 @@ function ChatPageContent() {
                   />
                 </div>
 
+                {joinFailure?.roomId === currentRoom.id && (
+                  <div
+                    role="alert"
+                    className="flex items-center justify-between gap-3 border-t bg-destructive/5 px-4 py-2 text-sm"
+                  >
+                    <span>{joinFailure.message}</span>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        setJoinFailure(null)
+                        setJoinAttempt(attempt => attempt + 1)
+                      }}
+                    >
+                      重新加入
+                    </Button>
+                  </div>
+                )}
+
                 {/* Message Input */}
                 <div className="chat-input-area-mobile flex-none">
                   <MessageInput
                     roomId={currentRoom.id}
-                    replyingTo={replyingTo}
+                    replyingTo={replyingTo?.room_id === currentRoom.id ? replyingTo : null}
                     onCancelReply={mobileHandlers.cancelReply}
                     sendMessage={sendMessage}
-                    isConnected={connectionInfo.status === 'connected'}
+                    isConnected={
+                      connectionInfo.status === 'connected' && joinedRoomId === currentRoom.id
+                    }
                     scrollContainerRef={scrollContainerRef}
                     onTypingStart={() => sendTyping(currentRoom.id.toString())}
                     onTypingStop={noop}

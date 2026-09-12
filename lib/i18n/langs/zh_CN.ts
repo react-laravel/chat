@@ -209,6 +209,11 @@ export const zh_CN = {
 
   // Chat UI
   'chat.go_back': '返回',
+  'chat.draft_offline': '连接恢复后可发送，草稿会自动保存',
+  'chat.composer_help': 'Enter 发送 · Shift + Enter 换行',
+  'chat.load_earlier': '加载更早的消息',
+  'chat.favorite_room': '收藏房间',
+  'chat.unfavorite_room': '取消收藏',
   'chat.rooms': '房间',
   'chat.browser_notifications': '浏览器通知',
   'chat.sound_notifications': '声音通知',

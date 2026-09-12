@@ -217,6 +217,11 @@ export const en = {
 
   // Chat UI
   'chat.go_back': 'Go Back',
+  'chat.draft_offline': 'Draft saved. Send when reconnected.',
+  'chat.composer_help': 'Enter to send · Shift + Enter for a new line',
+  'chat.load_earlier': 'Load earlier messages',
+  'chat.favorite_room': 'Favorite room',
+  'chat.unfavorite_room': 'Unfavorite room',
   'chat.rooms': 'Rooms',
   'chat.browser_notifications': 'Browser Notifications',
   'chat.sound_notifications': 'Sound Notifications',

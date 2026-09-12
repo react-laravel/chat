@@ -158,6 +158,8 @@ export function useMessageInputHandlers({
   // 处理键盘快捷键
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+      if (e.nativeEvent?.isComposing || e.nativeEvent?.keyCode === 229) return
+
       // 处理@提及导航
       if (handleMentionNavigation(e.key)) {
         e.preventDefault()

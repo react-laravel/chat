@@ -45,9 +45,9 @@ export function UserFilters({
   },
 }: UserFiltersProps) {
   return (
-    <div className="flex space-x-2">
+    <div className="grid grid-cols-1 gap-2">
       <Select value={sortBy} onValueChange={(value: SortOption) => onSortChange(value)}>
-        <SelectTrigger className="h-8 flex-1 text-sm">
+        <SelectTrigger className="h-8 w-full min-w-0 text-sm">
           <SelectValue />
         </SelectTrigger>
         <SelectContent>
@@ -58,7 +58,7 @@ export function UserFilters({
       </Select>
 
       <Select value={filterBy} onValueChange={(value: FilterOption) => onFilterChange(value)}>
-        <SelectTrigger className="h-8 flex-1 text-sm">
+        <SelectTrigger className="h-8 w-full min-w-0 text-sm">
           <Filter className="mr-2 h-3 w-3" />
           <SelectValue />
         </SelectTrigger>

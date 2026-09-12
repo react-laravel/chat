@@ -1,110 +1,22 @@
-/* 聊天样式优化 - 移动端和桌面端 */
-@media (max-width: 768px) {
-  /* 定义头部高度变量 */
-  :root {
-    --chat-header-height: 60px;
-    --chat-search-height: 60px;
-    --chat-total-header-height: calc(var(--chat-header-height) + var(--chat-search-height));
-    --chat-input-height: 100px; /* 输入框区域高度 */
-  }
-
-  /* 聊天页面高度：移动端使用动态视口高度 */
-  .chat-page-shell {
-    height: calc(100vh - 50px);
-    min-height: 0;
-  }
-
-  @supports (height: 100dvh) {
-    .chat-page-shell {
-      height: calc(100dvh - 50px);
-    }
-  }
-
-  /* 移动端导航栏样式 */
-  .chat-header-mobile {
-    padding-top: env(safe-area-inset-top, 0);
-    min-height: calc(env(safe-area-inset-top, 0px) + var(--chat-header-height));
-    position: relative;
-    background-color: hsl(var(--background));
-    border-bottom: 1px solid hsl(var(--border));
-  }
-
-  /* 消息输入区域样式 */
-  .chat-input-area-mobile {
-    padding-left: 0.75rem;
-    padding-right: 0.75rem;
-    padding-top: 0.75rem;
-    padding-bottom: 0.75rem;
-    position: relative;
-    background-color: hsl(var(--background));
-    border-top: 1px solid hsl(var(--border));
-    min-height: auto;
-    /* 确保输入框有足够的高度 */
-    min-height: var(--chat-input-height);
-  }
-
-  /* 按钮样式 */
-  .chat-button-mobile {
-    margin-left: 0.25rem;
-    margin-right: 0.25rem;
-  }
-
-  /* 确保聊天头部不会与内容重叠 */
-  .chat-header-container {
-    position: relative;
-    background-color: hsl(var(--background));
-    border-bottom: 1px solid hsl(var(--border));
-  }
-
-  /* 消息区域 - 这一层负责滚动 */
-  .chat-messages-mobile {
-    /* 确保这一层可以滚动 */
-    overflow-y: auto;
-    overflow-x: hidden;
-    /* 确保flex布局正确工作 */
-    flex: 1;
-    min-height: 0;
-    /* 确保滚动区域正确计算高度 */
-    box-sizing: border-box;
-    /* 确保内容区域在头部下方 */
-    position: relative;
-    z-index: 1;
-    /* 移除底部边框，避免与输入区域产生两条横线 */
-    border-bottom: none;
-  }
+/* The standalone page and embedded page share the same viewport layout. */
+.chat-page-shell {
+  height: 100vh;
+  height: 100dvh;
+  padding-top: env(safe-area-inset-top, 0px);
+  min-height: 0;
 }
 
-/* 桌面端样式优化 */
-@media (min-width: 769px) {
-  .chat-page-shell {
-    height: calc(100vh - 50px);
-    min-height: 0;
-  }
-  /* 消息输入区域样式 - 桌面端 */
-  .chat-input-area-mobile {
-    position: relative;
-    padding-left: 1rem;
-    padding-right: 1rem;
-    padding-bottom: 1rem;
-    background-color: hsl(var(--background));
-    border-top: 1px solid hsl(var(--border));
-    min-height: auto;
-  }
+.chat-input-area-mobile {
+  position: relative;
+  background: var(--background);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
 
-  /* 消息区域样式 - 桌面端 */
-  .chat-messages-mobile {
-    /* 确保这一层可以滚动 */
-    overflow-y: auto;
-    overflow-x: hidden;
-    /* 确保flex布局正确工作 */
-    flex: 1;
-    min-height: 0;
-    /* 确保滚动区域正确计算高度 */
-    box-sizing: border-box;
-    /* 确保内容区域在头部下方 */
-    position: relative;
-    z-index: 1;
-    /* 移除底部边框，避免与输入区域产生两条横线 */
-    border-bottom: none;
-  }
+.chat-messages-mobile {
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
+  min-height: 0;
+  position: relative;
+  scrollbar-gutter: stable;
 }

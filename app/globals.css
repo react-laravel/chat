@@ -59,7 +59,7 @@
 
 @theme inline {
   --font-sans:
-    'Long Cang', 'STKaiti', 'KaiTi', -apple-system, BlinkMacSystemFont, 'PingFang SC', sans-serif;
+    -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-card: var(--card);
@@ -99,6 +99,7 @@
 
   body {
     margin: 0;
+    font-family: var(--font-sans);
   }
 
   :focus-visible {

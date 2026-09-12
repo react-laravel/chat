@@ -5,6 +5,11 @@
 
 export type JsonApiPaginatedResponse<T> = {
   data: T[]
+  current_page?: number
+  last_page?: number
+  per_page?: number
+  total?: number
+  next_page_url?: string | null
   meta?: {
     current_page?: number
     last_page?: number
@@ -32,7 +37,7 @@ export type MessagePagination = {
 export function toPagination<T>(
   response: JsonApiPaginatedResponse<T>
 ): Omit<MessagePagination, 'data'> & { data: T[] } {
-  const meta = response.meta ?? {}
+  const meta = response.meta ?? response
   const currentPage = meta.current_page ?? 1
   const lastPage = meta.last_page ?? currentPage
 
@@ -42,6 +47,6 @@ export function toPagination<T>(
     last_page: lastPage,
     per_page: meta.per_page ?? response.data.length,
     total: meta.total ?? response.data.length,
-    has_more: Boolean(response.links?.next) || currentPage < lastPage,
+    has_more: Boolean(response.links?.next || response.next_page_url) || currentPage < lastPage,
   }
 }

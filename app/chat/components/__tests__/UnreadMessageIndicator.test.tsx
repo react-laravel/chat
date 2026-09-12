@@ -105,3 +105,18 @@ describe('useScrollPosition', () => {
     expect(result.current.isNearBottom).toBe(true)
   })
 })
+
+describe('history and room unread isolation', () => {
+  it('does not count older pages or another room as new arrivals', () => {
+    const { result, rerender } = renderHook(
+      ({ messages, roomId }) => useUnreadMessages(messages, false, undefined, roomId),
+      { initialProps: { messages: [{ id: 3 }, { id: 4 }], roomId: 1 } }
+    )
+    rerender({ messages: [{ id: 1 }, { id: 2 }, { id: 3 }, { id: 4 }], roomId: 1 })
+    expect(result.current).toBe(0)
+    rerender({ messages: [{ id: 1 }, { id: 2 }, { id: 3 }, { id: 4 }, { id: 5 }], roomId: 1 })
+    expect(result.current).toBe(1)
+    rerender({ messages: [{ id: 10 }, { id: 11 }], roomId: 2 })
+    expect(result.current).toBe(0)
+  })
+})

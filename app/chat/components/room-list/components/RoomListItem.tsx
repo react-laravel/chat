@@ -1,5 +1,5 @@
 import React, { memo } from 'react'
-import { Hash, Lock, Users, Star } from 'lucide-react'
+import { Hash, Lock, Users, Star, Loader2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/helpers'
 import { useTranslation } from '@/hooks/useTranslation'
@@ -7,6 +7,7 @@ import type { ChatRoom } from '@/app/chat/types'
 
 interface RoomListItemProps {
   room: ChatRoom
+  isJoining?: boolean
   isActive: boolean
   isFavorite: boolean
   onSelect: (room: ChatRoom) => void
@@ -16,7 +17,7 @@ interface RoomListItemProps {
 }
 
 export const RoomListItem = memo<RoomListItemProps>(
-  ({ room, isActive, isFavorite, onSelect, onToggleFavorite }) => {
+  ({ room, isActive, isJoining, isFavorite, onSelect, onToggleFavorite }) => {
     const { t } = useTranslation()
 
     return (
@@ -24,12 +25,15 @@ export const RoomListItem = memo<RoomListItemProps>(
         className={cn(
           'group hover:bg-accent/50 w-full cursor-pointer rounded-lg p-3 text-left transition-colors',
           'focus:ring-ring focus:ring-2 focus:ring-offset-2 focus:outline-none',
-          isActive && 'bg-accent text-accent-foreground'
+          isActive && 'bg-primary/10 text-foreground ring-1 ring-primary/20'
         )}
         onClick={() => onSelect(room)}
+        aria-current={isActive ? true : undefined}
+        aria-busy={isJoining}
         role="button"
         tabIndex={0}
         onKeyDown={e => {
+          if (e.target !== e.currentTarget) return
           if (e.key === 'Enter' || e.key === ' ') {
             e.preventDefault()
             onSelect(room)
@@ -39,7 +43,11 @@ export const RoomListItem = memo<RoomListItemProps>(
         <div className="flex items-start justify-between">
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2">
-              <Hash className="text-muted-foreground h-4 w-4 shrink-0" />
+              {isJoining ? (
+                <Loader2 className="h-4 w-4 shrink-0 animate-spin" />
+              ) : (
+                <Hash className="text-muted-foreground h-4 w-4 shrink-0" />
+              )}
               <span className="truncate font-medium">{room.name}</span>
               {room.is_private && (
                 <Lock
@@ -54,7 +62,7 @@ export const RoomListItem = memo<RoomListItemProps>(
           {/* 人数和房间操作 */}
           <div className="relative flex items-center">
             {/* 操作按钮 - hover 时显示 */}
-            <div className="absolute right-full mr-2 flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
+            <div className="absolute right-full mr-2 flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
               <Button
                 variant="ghost"
                 size="sm"

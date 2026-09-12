@@ -6,7 +6,7 @@ import { useTranslation } from '@/hooks/useTranslation'
 import { EmojiPicker } from './EmojiPicker'
 
 interface ActionButtonsExtendedProps {
-  onFileUpload: () => void
+  onFileUpload?: () => void
   onSend: () => void
   canSend: boolean
   isSending: boolean
@@ -31,17 +31,19 @@ export function ActionButtons({
   return (
     <div className="flex flex-shrink-0 gap-2 sm:gap-3">
       {/* 文件上传按钮 */}
-      <Button
-        variant="ghost"
-        size="sm"
-        onClick={onFileUpload}
-        disabled={isSending || !isConnected}
-        className="h-9 w-9 touch-manipulation p-0 sm:h-10 sm:w-10"
-        aria-label={t('chat.upload_file', 'Upload file')}
-        title={t('chat.upload_file', 'Upload file')}
-      >
-        <Paperclip className="h-3 w-3 sm:h-4 sm:w-4" />
-      </Button>
+      {onFileUpload && (
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={onFileUpload}
+          disabled={isSending || !isConnected}
+          className="h-9 w-9 touch-manipulation p-0 sm:h-10 sm:w-10"
+          aria-label={t('chat.upload_file', 'Upload file')}
+          title={t('chat.upload_file', 'Upload file')}
+        >
+          <Paperclip className="h-3 w-3 sm:h-4 sm:w-4" />
+        </Button>
+      )}
 
       {/* 表情选择器 */}
       <EmojiPicker

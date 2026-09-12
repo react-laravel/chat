@@ -6,30 +6,35 @@ import ProtectedRoute from '@/components/ProtectedRoute'
 import { apiRequest } from '@/lib/api'
 
 export function EmbedClient({ clientId }: { clientId: string }) {
+  return <ValidatedEmbed key={clientId} clientId={clientId} />
+}
+
+function ValidatedEmbed({ clientId }: { clientId: string }) {
   const [state, setState] = useState<'checking' | 'allowed' | 'denied'>('checking')
 
   useEffect(() => {
-    if (!clientId || !document.referrer) {
-      setState('denied')
-      return
+    let active = true
+    const verify = async () => {
+      if (!clientId || !document.referrer) return false
+      const parentOrigin = new URL(document.referrer).origin
+      await apiRequest(
+        `/embed/config?client=${encodeURIComponent(clientId)}&origin=${encodeURIComponent(parentOrigin)}`,
+        'GET',
+        undefined,
+        { suppressUnauthorizedRedirect: true }
+      )
+      return true
     }
-
-    let parentOrigin = ''
-    try {
-      parentOrigin = new URL(document.referrer).origin
-    } catch {
-      setState('denied')
-      return
+    void verify()
+      .then(allowed => {
+        if (active) setState(allowed ? 'allowed' : 'denied')
+      })
+      .catch(() => {
+        if (active) setState('denied')
+      })
+    return () => {
+      active = false
     }
-
-    void apiRequest(
-      `/embed/config?client=${encodeURIComponent(clientId)}&origin=${encodeURIComponent(parentOrigin)}`,
-      'GET',
-      undefined,
-      { suppressUnauthorizedRedirect: true }
-    )
-      .then(() => setState('allowed'))
-      .catch(() => setState('denied'))
   }, [clientId])
 
   if (state === 'checking') {

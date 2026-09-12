@@ -57,34 +57,27 @@ UnreadMessageIndicator.displayName = 'UnreadMessageIndicator'
 export function useUnreadMessages(
   messages: Array<{ id?: number }>,
   isAtBottom: boolean,
-  lastReadMessageId?: number
+  lastReadMessageId?: number,
+  scopeKey?: number
 ) {
   const [unreadCount, setUnreadCount] = useState(0)
-  const prevMessagesLengthRef = useRef(messages.length)
-  const lastReadMessageIdRef = useRef<number | undefined>(lastReadMessageId)
-
-  // 更新最后已读消息ID
-  useEffect(() => {
-    if (lastReadMessageId !== undefined) {
-      lastReadMessageIdRef.current = lastReadMessageId
-    }
-  }, [lastReadMessageId])
+  const previous = useRef({ messages, scopeKey })
 
   useEffect(() => {
-    const prevMsgLen = prevMessagesLengthRef.current
-    const currMsgLen = messages.length
-
-    // 如果有新消息且用户不在底部
-    if (currMsgLen > prevMsgLen && !isAtBottom) {
-      const newMsgsCount = currMsgLen - prevMsgLen
-      setUnreadCount(prev => prev + newMsgsCount)
-    }
-    // 如果用户在底部，清除未读计数
-    if (isAtBottom) {
+    const last = previous.current
+    if (isAtBottom || scopeKey !== last.scopeKey) {
       setUnreadCount(0)
+    } else {
+      // History is prepended. Only IDs newer than the previous newest message are unread.
+      const newestId = Math.max(
+        lastReadMessageId ?? 0,
+        ...last.messages.map(message => message.id ?? 0)
+      )
+      const added = messages.filter(message => (message.id ?? 0) > newestId).length
+      if (added > 0) setUnreadCount(count => count + added)
     }
-    prevMessagesLengthRef.current = currMsgLen
-  }, [messages.length, isAtBottom])
+    previous.current = { messages, scopeKey }
+  }, [messages, isAtBottom, lastReadMessageId, scopeKey])
 
   return unreadCount
 }

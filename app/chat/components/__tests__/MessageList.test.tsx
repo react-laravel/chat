@@ -103,6 +103,7 @@ describe('MessageList', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mockChatState.isLoading = false
+    Object.assign(mockChatState, { loadingMessageRooms: {} })
     mockChatState.messages = {}
     mockChatState.typingByRoom = {}
     loadMessagesMock.mockResolvedValue(undefined)
@@ -125,6 +126,7 @@ describe('MessageList', () => {
 
   it('renders loading indicator while loading', () => {
     mockChatState.isLoading = true
+    Object.assign(mockChatState, { loadingMessageRooms: { '1': true } })
 
     const view = render(<MessageList roomId={1} />)
     expect(view.getByText('Loading more messages...')).toBeInTheDocument()

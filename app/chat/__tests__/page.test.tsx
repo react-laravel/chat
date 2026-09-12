@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, fireEvent } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import ChatPage from '../page'
 
@@ -16,6 +16,8 @@ const mocks = vi.hoisted(() => {
     updateRoomOnlineCount: vi.fn(),
     setTyping: vi.fn(),
     loadRooms: vi.fn(() => Promise.resolve()),
+    joinRoom: vi.fn(() => Promise.resolve()),
+    loadMessages: vi.fn(() => Promise.resolve()),
     loadOnlineUsers: vi.fn(() => Promise.resolve()),
     connectionStatus: 'disconnected',
   }
@@ -170,7 +172,7 @@ describe('ChatPage', () => {
     expect(screen.getByText('sidebar-users-disconnected')).toBeInTheDocument()
   })
 
-  it('renders the active room layout and passes connected state to message input', () => {
+  it('enables the composer only after restoring server room membership', async () => {
     mocks.chatStoreState.currentRoom = { id: 7, name: 'General' }
     mocks.chatStoreState.rooms = [{ id: 7, name: 'General' }]
     mocks.webSocketState.connectionInfo = {
@@ -186,7 +188,20 @@ describe('ChatPage', () => {
 
     expect(screen.getAllByText('header-General')).toHaveLength(2)
     expect(screen.getByText('message-list-7')).toBeInTheDocument()
-    expect(screen.getByText('message-input-7-connected')).toBeInTheDocument()
+    expect(screen.getByText('message-input-7-disconnected')).toBeInTheDocument()
+    await waitFor(() => expect(screen.getByText('message-input-7-connected')).toBeInTheDocument())
+  })
+
+  it('keeps sending disabled after a rejected join and lets the user retry', async () => {
+    mocks.chatStoreState.currentRoom = { id: 9, name: 'Raid' }
+    mocks.chatStoreState.rooms = [{ id: 9, name: 'Raid' }]
+    mocks.webSocketState.connectionInfo.status = 'connected'
+    mocks.chatStoreState.joinRoom.mockRejectedValueOnce(new Error('房间暂时不可用'))
+    render(<ChatPage />)
+    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('房间暂时不可用'))
+    expect(screen.getByText('message-input-9-disconnected')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: '重新加入' }))
+    await waitFor(() => expect(screen.getByText('message-input-9-connected')).toBeInTheDocument())
   })
 
   it('joins the current room when websocket connection is already established', async () => {
@@ -204,7 +219,9 @@ describe('ChatPage', () => {
     render(<ChatPage />)
 
     await waitFor(() => {
+      expect(mocks.chatStoreState.joinRoom).toHaveBeenCalledWith(9)
       expect(mocks.webSocketState.joinRoom).toHaveBeenCalledWith('9')
+      expect(mocks.chatStoreState.loadMessages).toHaveBeenCalledWith(9)
     })
   })
 })

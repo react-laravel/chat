@@ -2,6 +2,7 @@
 // 2026-03-20 AI refactor: extracted duplicated toPagination to lib/utils/pagination.ts
 
 import { create } from 'zustand'
+import { mergeMessages } from './utils/merge-messages'
 import { persist, createJSONStorage } from 'zustand/middleware'
 import type { ChatRoom, ChatMessage, OnlineUser, CreateRoomData, MessagePagination } from './types'
 import { ApiRequestError, get as apiGet, post as apiPost } from '@/lib/api'
@@ -38,6 +39,8 @@ export interface ChatState {
   messagesPagination: Record<string, MessagePagination>
 
   // UI 状态
+  messageLoadErrors: Record<string, { message: string; page: number } | undefined>
+  loadingMessageRooms: Record<string, boolean>
   isLoading: boolean
   isConnected: boolean
   connectionStatus: 'connecting' | 'connected' | 'disconnected'
@@ -121,6 +124,8 @@ const initialState = {
   messages: {},
   onlineUsers: {},
   messagesPagination: {},
+  messageLoadErrors: {},
+  loadingMessageRooms: {},
   isLoading: false,
   isConnected: false,
   connectionStatus: 'disconnected' as const,
@@ -293,6 +298,7 @@ const useChatStore = create<ChatState>()(
         } catch (error) {
           const chatError = handleChatStoreError(error, '加入聊天室失败')
           setChatError(set, chatError)
+          throw error
         }
       },
 
@@ -337,7 +343,7 @@ const useChatStore = create<ChatState>()(
         set(prevState => {
           const newMessages = {
             ...prevState.messages,
-            [roomKey]: [...(prevState.messages[roomKey] ?? []), message],
+            [roomKey]: mergeMessages(prevState.messages[roomKey] ?? [], [message]),
           }
 
           return {
@@ -390,103 +396,49 @@ const useChatStore = create<ChatState>()(
       },
 
       loadMessages: async (roomId, page = 1) => {
-        const roomKey = roomId.toString()
-
-        // 首先检查缓存（仅对第一页）
-        if (page === 1) {
-          const cached = chatCache.getCachedMessages(roomKey)
-          if (cached) {
-            if (process.env.NODE_ENV === 'development') {
-              console.log('ChatStore: Using cached messages for room:', roomKey)
-            }
-            set(state => ({
-              messages: {
-                ...state.messages,
-                [roomKey]: cached.messages,
-              },
-              messagesPagination: {
-                ...state.messagesPagination,
-                [roomKey]: cached.pagination as MessagePagination,
-              },
-              isLoading: false,
-            }))
-            return
-          }
-        }
-
-        set({ isLoading: true, error: null })
+        const roomKey = String(roomId)
+        if (get().loadingMessageRooms[roomKey]) return
+        set(state => ({
+          loadingMessageRooms: { ...state.loadingMessageRooms, [roomKey]: true },
+          messageLoadErrors: { ...state.messageLoadErrors, [roomKey]: undefined },
+          error: null,
+        }))
         try {
+          // Always refresh: a cached room may have missed events while unsubscribed.
           const response = await apiGet<JsonApiPaginatedResponse<ChatMessage>>(
-            `/chat/rooms/${roomId}/messages?page=${page}`
+            `/chat/rooms/${roomId}/messages?page[number]=${page}`
           )
-
-          const paginationData = toPagination(response)
-
-          // 缓存第一页的消息
-          if (page === 1) {
-            chatCache.cacheMessages(roomKey, response.data, paginationData)
-          }
-
+          const pagination = toPagination(response)
           set(state => ({
             messages: {
               ...state.messages,
-              [roomKey]: response.data,
+              [roomKey]: mergeMessages(state.messages[roomKey] ?? [], response.data),
             },
-            messagesPagination: {
-              ...state.messagesPagination,
-              [roomKey]: paginationData,
-            },
-            isLoading: false,
+            messagesPagination: { ...state.messagesPagination, [roomKey]: pagination },
           }))
         } catch (error) {
           if (error instanceof ApiRequestError && error.status === 404) {
+            set(state => clearMissingCurrentRoom(state, roomId))
+          } else {
+            const chatError = handleChatStoreError(error, '加载消息失败')
             set(state => ({
-              ...clearMissingCurrentRoom(state, roomId),
-              isLoading: false,
+              messageLoadErrors: {
+                ...state.messageLoadErrors,
+                [roomKey]: { message: chatError.message, page },
+              },
             }))
-            return
+            setChatError(set, chatError)
           }
-
-          const chatError = handleChatStoreError(error, '加载消息失败')
-          setChatError(set, chatError, { isLoading: false })
+        } finally {
+          set(state => ({
+            loadingMessageRooms: { ...state.loadingMessageRooms, [roomKey]: false },
+          }))
         }
       },
 
       loadMoreMessages: async roomId => {
-        const roomKey = roomId.toString()
-        const currentPagination = get().messagesPagination[roomKey]
-
-        if (!currentPagination || !currentPagination.has_more) {
-          return
-        }
-
-        const nextPage = currentPagination.current_page + 1
-
-        try {
-          const response = await apiGet<JsonApiPaginatedResponse<ChatMessage>>(
-            `/chat/rooms/${roomId}/messages?page=${nextPage}`
-          )
-          const paginationData = toPagination(response)
-
-          set(state => {
-            const currentMessages = state.messages[roomKey] ?? []
-
-            return {
-              messages: {
-                ...state.messages,
-                [roomKey]: [...response.data, ...currentMessages], // 将较旧的消息添加到前面
-              },
-              messagesPagination: {
-                ...state.messagesPagination,
-                [roomKey]: paginationData,
-              },
-              error: null,
-            }
-          })
-        } catch (error) {
-          const chatError = handleChatStoreError(error, '加载更多消息失败')
-          setChatError(set, chatError)
-        }
+        const pagination = get().messagesPagination[String(roomId)]
+        if (pagination?.has_more) await get().loadMessages(roomId, pagination.current_page + 1)
       },
 
       clearMessages: roomId => {
@@ -543,8 +495,8 @@ const useChatStore = create<ChatState>()(
         })
       },
 
-      // 使用节流的在线用户加载函数
-      loadOnlineUsers: createThrottledFunction(async (roomId: number) => {
+      // Explicit room switches must not share a throttle with another room.
+      loadOnlineUsers: async (roomId: number) => {
         try {
           const response = await apiGet<{ online_users: OnlineUser[]; count: number }>(
             `/chat/rooms/${roomId}/users`
@@ -565,7 +517,7 @@ const useChatStore = create<ChatState>()(
           const chatError = handleChatStoreError(error, '加载在线用户失败', { showToast: false })
           set({ error: chatError })
         }
-      }, 5000) as unknown as (roomId: number) => Promise<void>,
+      },
 
       updateRoomOnlineCount: (roomId, onlineCount) => {
         set(state => ({
@@ -852,6 +804,7 @@ const useChatStore = create<ChatState>()(
       // 重新水化时清除加载状态
       onRehydrateStorage: () => state => {
         if (state) {
+          state.loadingMessageRooms = {}
           state.isLoading = false
           state.isConnected = false
           state.connectionStatus = 'disconnected'

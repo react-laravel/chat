@@ -2,6 +2,8 @@
 
 import React, { useEffect, useCallback, useMemo } from 'react'
 import Image from 'next/image'
+import { Button } from '@/components/ui/button'
+import useAuthStore from '@/stores/authStore'
 import { format, isToday, isYesterday } from 'date-fns'
 
 import { cn } from '@/lib/helpers'
@@ -31,6 +33,7 @@ interface MessageGroupProps {
 }
 
 interface MessageItemProps {
+  isOwn?: boolean
   message: ChatMessage
   onReply?: (message: ChatMessage) => void
   onReact?: (messageId: number, emoji: string) => void
@@ -51,7 +54,10 @@ const toRenderableMessage = (raw: ChatMessage): ChatMessage | null => {
     return null
   }
 
-  const message = typeof source.message === 'string' ? source.message : ''
+  const message =
+    typeof source.message === 'string'
+      ? source.message.replace(/<mention\b[^>]*>(.*?)<\/mention>/gis, '$1')
+      : ''
   const createdAtRaw = typeof source.created_at === 'string' ? source.created_at : ''
   const createdAt = createdAtRaw || new Date().toISOString()
   const updatedAtRaw = typeof source.updated_at === 'string' ? source.updated_at : ''
@@ -83,6 +89,7 @@ const MessageItem = React.memo(function MessageItem({
   message,
   onReply,
   onReact,
+  isOwn,
 }: MessageItemProps) {
   const mentionInfo = useMentionDetection(message.message)
   // ✅ 性能优化: 简化不必要的 useMemo，直接使用计算值
@@ -92,17 +99,19 @@ const MessageItem = React.memo(function MessageItem({
   return (
     <div
       className={cn(
-        'group/message relative rounded-lg p-3 transition-colors',
-        'md:pr-12',
+        'group/message relative rounded-xl px-3 py-2 pr-10 transition-colors',
         mentionInfo.hasCurrentUserMention
           ? 'bg-yellow-50 dark:bg-yellow-950/20'
-          : 'hover:bg-muted/50'
+          : isOwn
+            ? 'bg-primary/10 hover:bg-primary/15'
+            : 'bg-muted/40 hover:bg-muted/60'
       )}
     >
-      <div className="prose prose-sm max-w-none break-words">
+      <div className="max-w-none text-sm leading-7 [overflow-wrap:anywhere]">
         {isImageUrl ? (
           <Image
             src={messageText}
+            unoptimized
             alt="uploaded"
             width={960}
             height={720}
@@ -130,6 +139,7 @@ const MessageGroup = React.memo(function MessageGroup({
   isTyping,
 }: MessageGroupProps) {
   const { t } = useTranslation()
+  const own = useAuthStore(state => state.user?.id === user.id)
   const formatTimestamp = useCallback(
     (date: Date) => {
       if (isToday(date)) return format(date, 'HH:mm')
@@ -140,13 +150,16 @@ const MessageGroup = React.memo(function MessageGroup({
   )
 
   return (
-    <div className="group relative">
-      <div className="mb-2 flex items-center gap-2">
-        <div className="bg-primary text-primary-foreground flex h-8 w-8 items-center justify-center rounded-full text-sm font-medium">
+    <div
+      className={cn('group relative w-fit max-w-[92%] sm:max-w-[85%]', own && 'ml-auto')}
+      data-own={own}
+    >
+      <div className={cn('mb-1.5 flex min-w-0 items-center gap-2', own && 'flex-row-reverse')}>
+        <div className="bg-primary/15 text-foreground flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-sm font-medium">
           {user.name.charAt(0).toUpperCase()}
         </div>
-        <div className="flex items-center gap-2">
-          <span className="font-medium">{user.name}</span>
+        <div className="flex min-w-0 items-center gap-2">
+          <span className="truncate text-sm font-medium">{user.name}</span>
           {isTyping ? (
             <span className="text-primary animate-pulse text-xs font-medium">正在输入中...</span>
           ) : (
@@ -156,7 +169,13 @@ const MessageGroup = React.memo(function MessageGroup({
       </div>
       <div className="space-y-1">
         {messages.map(message => (
-          <MessageItem key={message.id} message={message} onReply={onReply} onReact={onReact} />
+          <MessageItem
+            key={message.id}
+            isOwn={own}
+            message={message}
+            onReply={onReply}
+            onReact={onReact}
+          />
         ))}
       </div>
     </div>
@@ -194,7 +213,10 @@ function MessageListContent({
 }: MessageListProps) {
   const { t } = useTranslation()
   const roomKey = useMemo(() => roomId.toString(), [roomId])
-  const isLoading = useChatStore(state => state.isLoading)
+  const isLoading = useChatStore(state => state.loadingMessageRooms?.[roomKey] ?? false)
+  const loadError = useChatStore(state => state.messageLoadErrors?.[roomKey])
+  const pagination = useChatStore(state => state.messagesPagination?.[roomKey])
+  const loadMoreMessages = useChatStore(state => state.loadMoreMessages)
   const loadMessages = useChatStore(state => state.loadMessages)
   const typingByRoom = useChatStore(state => state.typingByRoom)
   // ✅ 性能优化: 精细化选择器，只在当前房间的消息改变时重新渲染
@@ -229,10 +251,6 @@ function MessageListContent({
   }, [searchQuery, renderableMessages, hasSearchQuery])
 
   const stableLoadMessages = useCallback((id: number) => loadMessages(id), [loadMessages])
-
-  const handleReact = useCallback((messageId: number, emoji: string) => {
-    // Reaction functionality placeholder
-  }, [])
 
   const getScrollContainer = useCallback(() => {
     if (scrollContainerRef?.current) return scrollContainerRef.current
@@ -296,13 +314,14 @@ function MessageListContent({
   useMessageScroll({
     roomId,
     messageCount: filteredMessages.length,
+    firstMessageId: filteredMessages[0]?.id,
     hasSearchQuery,
     getScrollContainer,
   })
 
-  if (filteredMessages.length === 0 && !isLoading) {
+  if (filteredMessages.length === 0 && !isLoading && !loadError) {
     return (
-      <div className={cn('p-2', className)}>
+      <div className={cn('mx-auto w-full max-w-4xl px-4 py-5 sm:px-6', className)}>
         <EmptyState />
       </div>
     )
@@ -310,12 +329,39 @@ function MessageListContent({
 
   return (
     <div
-      className={cn('p-2', className)}
+      className={cn('mx-auto w-full max-w-4xl px-4 py-5 sm:px-6', className)}
       role="log"
       aria-live="polite"
       aria-relevant="additions text"
       aria-busy={isLoading}
     >
+      {loadError && (
+        <div
+          role="alert"
+          className="mb-4 flex items-center justify-between gap-3 rounded-lg border border-destructive/20 bg-destructive/5 p-3 text-sm"
+        >
+          <span>{loadError.message}</span>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => void loadMessages(roomId, loadError.page)}
+          >
+            重试
+          </Button>
+        </div>
+      )}
+      {pagination?.has_more && (
+        <div className="mb-5 flex justify-center">
+          <Button
+            variant="ghost"
+            size="sm"
+            disabled={isLoading}
+            onClick={() => void loadMoreMessages(roomId)}
+          >
+            {t('chat.load_earlier', '加载更早的消息')}
+          </Button>
+        </div>
+      )}
       {isLoading && (
         <div className="flex justify-center py-4">
           <div className="text-muted-foreground flex items-center gap-2 text-sm">
@@ -332,7 +378,6 @@ function MessageListContent({
             user={group.user}
             timestamp={group.timestamp}
             onReply={onReply}
-            onReact={handleReact}
             isTyping={group.isTyping}
           />
         ))}

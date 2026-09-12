@@ -23,11 +23,14 @@ function getEmbedContext() {
 export default function ProtectedRoute({ children }: ProtectedRouteProps) {
   const { isAuthenticated, loading, beginLogin, restoreSession } = useAuthStore()
   const redirected = useRef(false)
-  const embedContext = useMemo(getEmbedContext, [])
+  const embedContext = useMemo(() => getEmbedContext(), [])
 
   useEffect(() => {
     const handleAuthenticated = (event: MessageEvent) => {
-      if (event.origin !== window.location.origin || event.data?.type !== 'dogeow-chat-authenticated') {
+      if (
+        event.origin !== window.location.origin ||
+        event.data?.type !== 'dogeow-chat-authenticated'
+      ) {
         return
       }
       void restoreSession()

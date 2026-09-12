@@ -50,7 +50,7 @@ function ChatSidebar({
 
   if (type === 'rooms') {
     return (
-      <div className="bg-muted/30 hidden w-80 border-r lg:flex lg:flex-col">
+      <div className="bg-muted/30 hidden w-64 shrink-0 border-r xl:w-72 lg:flex lg:flex-col">
         <div className="border-b p-4">
           <div className="flex items-center justify-between">
             <h2 className="flex items-center gap-2 font-semibold">
@@ -77,7 +77,7 @@ function ChatSidebar({
   }
 
   return (
-    <div className="bg-muted/30 hidden w-80 border-l lg:flex lg:flex-col">
+    <div className="bg-muted/30 hidden w-56 shrink-0 border-l xl:w-60 lg:flex lg:flex-col">
       <div className="border-b p-4">
         <h2 className="flex items-center gap-2 font-semibold">
           <UsersIcon className="h-5 w-5" />

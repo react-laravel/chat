@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
-import { render, waitFor } from '@testing-library/react'
+import { render, waitFor, fireEvent } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MessageInput } from '../MessageInput'
 import { MAX_MESSAGE_LENGTH } from '@/app/chat/utils/message-input/constants'
@@ -59,6 +59,7 @@ describe('MessageInput', () => {
 
   beforeEach(() => {
     vi.clearAllMocks()
+    window.localStorage.clear()
     mockChatStore.onlineUsers = {}
     mockChatStore.messages = {}
     mockChatStore.muteUntil = null
@@ -69,7 +70,7 @@ describe('MessageInput', () => {
     const view = render(<MessageInput {...defaultProps} />)
 
     expect(view.getByRole('textbox', { name: /message input/i })).toBeInTheDocument()
-    expect(view.getByRole('button', { name: /upload file/i })).toBeInTheDocument()
+    expect(view.queryByRole('button', { name: /upload file/i })).not.toBeInTheDocument()
     expect(view.getByRole('button', { name: /select emoji/i })).toBeInTheDocument()
     expect(view.getByRole('button', { name: /send message/i })).toBeInTheDocument()
     expect(view.getByTestId('file-input')).toBeInTheDocument()
@@ -101,7 +102,9 @@ describe('MessageInput', () => {
     const textarea = view.getByRole('textbox', { name: /message input/i })
     const sendButton = view.getByRole('button', { name: /send message/i })
 
-    expect(textarea).toBeDisabled()
+    expect(textarea).toBeEnabled()
+    await user.type(textarea, '离线草稿')
+    expect(textarea).toHaveValue('离线草稿')
     expect(sendButton).toBeDisabled()
 
     await user.click(sendButton)
@@ -143,6 +146,19 @@ describe('MessageInput', () => {
     const cancelButton = view.getByRole('button', { name: /cancel reply/i })
     await user.click(cancelButton)
     expect(onCancelReply).toHaveBeenCalledTimes(2)
+  })
+
+  it('does not submit an IME confirmation, but submits a regular Enter', async () => {
+    const sendMessage = vi.fn(() => Promise.resolve(successResult))
+    const view = render(<MessageInput {...defaultProps} sendMessage={sendMessage} />)
+    const textarea = view.getByRole('textbox')
+    fireEvent.change(textarea, { target: { value: '中文消息' } })
+    fireEvent.keyDown(textarea, { key: 'Enter', isComposing: true, keyCode: 229 })
+    expect(sendMessage).not.toHaveBeenCalled()
+    fireEvent.keyDown(textarea, { key: 'Enter', shiftKey: true })
+    expect(sendMessage).not.toHaveBeenCalled()
+    fireEvent.keyDown(textarea, { key: 'Enter' })
+    await waitFor(() => expect(sendMessage).toHaveBeenCalledWith('1', '中文消息'))
   })
 
   it('enforces max message length', async () => {

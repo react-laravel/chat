@@ -57,6 +57,7 @@ export function MessageInput({
   // 使用自定义hooks管理状态和逻辑
   const {
     message,
+    characterCount,
     setMessage,
     isSending,
     isEmojiPickerOpen,
@@ -92,7 +93,7 @@ export function MessageInput({
 
   // 未读消息逻辑
   const { isAtBottom } = useScrollPosition(scrollContainerRef || { current: null })
-  const unreadCount = useUnreadMessages(roomMessages, isAtBottom)
+  const unreadCount = useUnreadMessages(roomMessages, isAtBottom, undefined, roomId)
 
   // 处理文件上传按钮点击
   const handleFileUploadClick = useCallback(() => {
@@ -138,7 +139,7 @@ export function MessageInput({
   return (
     <div
       ref={inputContainerRef}
-      className={`bg-background relative border-t-0 p-3 sm:p-4 ${className}`}
+      className={`bg-background relative border-t px-3 py-3 sm:px-5 sm:py-4 ${className}`}
     >
       {/* 静音状态提示 */}
       {checkMuteStatus() && <MuteStatusAlert muteUntil={muteUntil} muteReason={muteReason} />}
@@ -151,7 +152,7 @@ export function MessageInput({
       {/* 已上传文件预览 */}
       <FilePreview files={uploadedFiles} onRemove={removeFile} />
 
-      <div className="relative flex gap-3 sm:gap-4">
+      <div className="relative flex items-end gap-2 rounded-xl border bg-muted/20 p-2 focus-within:border-primary/60 focus-within:ring-2 focus-within:ring-primary/10">
         <div className="relative min-w-0 flex-1">
           <Textarea
             ref={textareaRef}
@@ -163,12 +164,12 @@ export function MessageInput({
                 ? t('chat.reply_to', 'Reply to {name}...').replace('{name}', replyingTo.user.name)
                 : t('chat.type_message', 'Type a message...')
             }
-            disabled={isSending || !isConnected}
-            className="scrollbar-none max-h-[120px] min-h-[40px] resize-none"
+            disabled={isSending}
+            className="max-h-[120px] min-h-[40px] resize-none border-0 bg-transparent text-base shadow-none focus-visible:ring-0"
             rows={1}
             aria-label={t('chat.message_input', 'Message input')}
             aria-describedby="message-help-text"
-            aria-invalid={message.length > MAX_MESSAGE_LENGTH}
+            aria-invalid={characterCount > MAX_MESSAGE_LENGTH}
             maxLength={MAX_MESSAGE_LENGTH}
           />
 
@@ -182,7 +183,6 @@ export function MessageInput({
 
         {/* 操作按钮 */}
         <ActionButtons
-          onFileUpload={handleFileUploadClick}
           onSend={handleSendMessage}
           canSend={canSend}
           isSending={isSending}
@@ -191,6 +191,22 @@ export function MessageInput({
           onEmojiPickerChange={setIsEmojiPickerOpen}
           onEmojiSelect={insertEmoji}
         />
+      </div>
+
+      <div
+        id="message-help-text"
+        className="mt-2 flex items-center justify-between gap-3 text-xs text-muted-foreground"
+      >
+        <span role="status">
+          {!isConnected
+            ? t('chat.draft_offline', '连接恢复后可发送，草稿会自动保存')
+            : t('chat.composer_help', 'Enter 发送 · Shift + Enter 换行')}
+        </span>
+        <span
+          className={`shrink-0 tabular-nums ${characterCount > MAX_MESSAGE_LENGTH ? 'text-destructive' : ''}`}
+        >
+          {characterCount} / {MAX_MESSAGE_LENGTH}
+        </span>
       </div>
 
       {/* 隐藏的文件输入 */}
