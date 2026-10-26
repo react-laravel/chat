@@ -1,21 +1,60 @@
-name: Deploy Chat (Self-hosted)
+name: Deploy Chat frontend to B
 
 on:
   push:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      validate_only:
+        description: Build the locked runtime and verify B without changing its current release
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
 
 concurrency:
-  group: deploy-chat-production
+  group: deploy-chat-web-b
   cancel-in-progress: false
 
 jobs:
   deploy:
-    runs-on: self-hosted
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      NEXT_TELEMETRY_DISABLED: '1'
+      NEXT_PRIVATE_STANDALONE: '1'
     steps:
-      - uses: actions/checkout@v5
-      - name: Deploy production
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          persist-credentials: false
+          clean: true
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: '24.16.0'
+          cache: npm
+      - name: Install locked dependencies on the hosted runner
+        run: npm ci
+      - name: Load the explicit public build settings
         env:
-          APP_ROOT: /var/www/chat
-          PM2_HOME: /var/www/.pm2
-        run: scripts/deploy-production.sh
+          B_CHAT_WEB_PUBLIC_BUILD_ENV: ${{ secrets.B_CHAT_WEB_PUBLIC_BUILD_ENV }}
+        run: node scripts/write-public-build-env.mjs
+      - name: Check types and build the same application
+        run: |
+          npm run type-check
+          npm test
+          npm run build
+          node scripts/prepare-chat-standalone.mjs
+      - name: Package minimal Node runtime
+        run: |
+          cd .next/standalone
+          python3 ../../scripts/package-chat-web.py "$RUNNER_TEMP/chat-web-$GITHUB_SHA.tar.gz" "$GITHUB_SHA"
+      - name: Publish or verify B
+        env:
+          B_CHAT_WEB_DEPLOY_SSH_KEY: ${{ secrets.B_CHAT_WEB_DEPLOY_SSH_KEY }}
+          B_CHAT_WEB_DEPLOY_KNOWN_HOSTS: ${{ secrets.B_CHAT_WEB_DEPLOY_KNOWN_HOSTS }}
+          VALIDATE_ONLY: ${{ github.event_name == 'workflow_dispatch' && inputs.validate_only == true }}
+        run: bash scripts/deploy-chat-web-to-b.sh "$RUNNER_TEMP/chat-web-$GITHUB_SHA.tar.gz" "$GITHUB_SHA"
+      - name: Remove transient build settings and archive
+        if: always()
+        run: rm -f .env.production.local "$RUNNER_TEMP/chat-web-$GITHUB_SHA.tar.gz"
